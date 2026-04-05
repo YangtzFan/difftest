@@ -12,10 +12,8 @@ xmake run init
 xmake build rtl
 
 # 运行仿真（默认测试用例: and）
-xmake run
-
-# 输出波形文件
-DUMP=1 xmake run
+xmake run Core     # without waveform recorded
+DUMP=1 xmake run Core # with waveform recorded
 
 # 批量运行所有测试用例并输出汇总报告
 xmake run sim-all

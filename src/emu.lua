@@ -55,9 +55,8 @@ end
 ---@field imm    integer
 
 ---@class (exact) difftest.commit_entry
----@field commit_count integer 当前提交指令周期
+---@field commit_index integer 当前提交指令个数
 ---@field pc           integer 当前指令的 PC（无符号）
----@field inst         integer 原始指令字（用于日志）
 ---@field reg_wen      boolean 是否写寄存器
 ---@field reg_waddr    integer 目的寄存器编号
 ---@field reg_wdata    integer 寄存器写入数据
@@ -341,9 +340,8 @@ function emu:execute(d)
 
     -- 提交记录：默认值
     local commit = {
-        commit_count = self.commit, -- 当前提交数
+        commit_index = self.commit, -- 当前提交指令序数
         pc           = pc,          -- 当前指令的 PC（无符号）
-        inst         = d.inst,      -- 原始指令字（用于日志）
         reg_wen      = false,       -- 是否写寄存器
         reg_waddr    = 0,           -- 目的寄存器编号
         reg_wdata    = 0,           -- 寄存器写入数据
@@ -525,24 +523,14 @@ function emu:execute(d)
         -- ============================================================
     end
 
-    -- ================================================================
-    -- 寄存器写回
-    -- ================================================================
-    -- 根据 RTL 行为：regWriteEnable 仅取决于指令类型，
-    -- 不检查 rd 是否为 x0。x0 的写入在 write_reg 内部被忽略。
-    -- 这与硬件的 Rename 阶段行为一致：
-    --   regWriteEnable = uType || jal || jalr || lType || iType || rType
     if write_rd then
-        self:write_reg(rd, rd_val)   -- x0 写入自动忽略
+        self:write_reg(rd, rd_val) -- 写回寄存器， x0 写入自动忽略
         commit.reg_wen   = true
         commit.reg_waddr = rd
         commit.reg_wdata = tobit(rd_val)
     end
 
-    -- ================================================================
-    -- 更新 PC
-    -- ================================================================
-    self.pc = next_pc
+    self.pc = next_pc -- 更新 PC
     return commit
 end
 
@@ -557,7 +545,7 @@ function emu:commit_step(inst_commit_count)
     local inst_commit_table = {} --[[@as table<integer, difftest.commit_entry>]]
 
     for i = 1, inst_commit_count do
-        self.commit = self.commit + 1      -- 递增周期计数
+        self.commit = self.commit + 1    -- 递增周期计数
         local inst    = self:fetch()     -- 第一步：取指
         local decoded = self:decode(inst)  -- 第二步：译码
         local commit  = self:execute(decoded) -- 第三步：执行

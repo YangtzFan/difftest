@@ -23,9 +23,16 @@ local print = print
 
 local function test_print(msg)
     if msg == "success" then
-        print("\27[32m" .. "TEST PASS" .. "\27[0m") -- 验证通过：打印绿色提示
+        print("\27[32m" .. [[
+  _____         _____ _____
+ |  __ \ /\    / ____/ ____|
+ | |__) /  \  | (___| (___
+ |  ___/ /\ \  \___ \\___ \
+ | |  / ____ \ ____) |___) |
+ |_| /_/    \_\_____/_____/
+]] .. "\27[0m") -- 验证通过：打印绿色提示
     elseif msg == "fail" then
-        print("\27[31m" .. "TEST FAIL: %s\27[0m") -- 验证失败：打印红色提示
+        print("\27[31mTEST FAIL\27[0m") -- 验证失败：打印红色提示
     else
         assert(false, f("Unknown msg %s", msg))
     end
@@ -41,6 +48,12 @@ end
 
 fork {
     main_task = function()
+        -- 检查 DUMP 环境变量：如果设置了 DUMP=1，则启用 FSDB 波形记录
+        -- 波形文件将保存到 build/vcs/Core 目录下，文件名基于测试用例名称
+        if os.getenv("DUMP") then
+            sim.dump_wave(tc)
+        end
+
         dut_reset() -- 复位 RTL
         
         local cycles       = dut.cycles:get() -- 仿真周期计数
@@ -52,54 +65,59 @@ fork {
             clock:posedge()
 
             -- 读取 RTL 提交信号：本周期是否有指令提交
-            local have_inst = dut.io_debug_wb_have_inst:get()
+            local have_inst = dut.io_debug_commit_have_inst:get()
             if have_inst == 1 then
-                -- 读取 RTL 的提交结果
-                local rtl_pc    = dut.io_debug_wb_pc:get()    -- 提交指令 PC
-                local rtl_ena   = dut.io_debug_wb_ena:get()   -- 寄存器写使能
-                local rtl_reg   = dut.io_debug_wb_reg:get()   -- 目的寄存器编号
-                local rtl_value = dut.io_debug_wb_value:get() -- 寄存器写入值
-                local rtl_pc_s    = tobit(rtl_pc) -- Verilog wire 为无符号，通过 tobit 统一
-                local rtl_value_s = tobit(rtl_value)
+                -- 读取 RTL 的提交结果，通过 tobit 统一
+                local rtl_pc        = tobit(dut.io_debug_commit_pc:get())
+                local rtl_reg_wen   = dut.io_debug_commit_reg_wen:get()
+                local rtl_reg_waddr = tobit(dut.io_debug_commit_reg_waddr:get())
+                local rtl_reg_wdata = tobit(dut.io_debug_commit_reg_wdata:get())
+                local rtl_ram_wen   = dut.io_debug_commit_ram_wen:get()
+                local rtl_ram_waddr = tobit(dut.io_debug_commit_ram_waddr:get())
+                local rtl_ram_wdata = tobit(dut.io_debug_commit_ram_wdata:get())
+                local rtl_ram_wmask = dut.io_debug_commit_ram_wmask:get()
 
                 -- 驱动参考模型执行一条指令，取出参考模型的结果
                 commit_count = commit_count + 1
                 local inst_commit_table = emu:commit_step(1)
                 local ref = inst_commit_table[1]
-                local ref_pc    = tobit(ref.pc)
-                local ref_ena   = ref.reg_wen and 1 or 0
-                local ref_waddr = ref.reg_waddr
-                local ref_wdata = tobit(ref.reg_wdata)
+
+                local ref_pc        = tobit(ref.pc)
+                local ref_reg_wen   = ref.reg_wen and 1 or 0
+                local ref_reg_waddr = tobit(ref.reg_waddr)
+                local ref_reg_wdata = tobit(ref.reg_wdata)
+                local ref_ram_wen   = ref.ram_wen and 1 or 0
+                local ref_ram_waddr = tobit(ref.ram_waddr)
+                local ref_ram_wdata = tobit(ref.ram_wdata)
+                local ref_ram_wmask = ref.ram_wmask
 
                 -- 打印提交日志
-                print(f("[Cycle %6d]\t[Commit #%d]\tPC=%s | WEN=%d | RD=x%-2d | WDATA=%s",
-                    cycles, emu.commit, to_hex(ref_pc),
-                    ref_ena, ref_waddr, to_hex(ref_wdata)))
-                if ref.ram_wen then
-                    print(f(" | MEM[%s]=%s(mask=%d)",
-                        to_hex(ref.ram_waddr), to_hex(ref.ram_wdata), ref.ram_wmask))
-                end
+                print(f("[Cycle 0x%s] [Commit #%d] [PC=%s]", to_hex(cycles), emu.commit, to_hex(ref_pc)))
+                print(f("\tREGWEN=%d | RD=x%-2d | REGWDATA=%s | RAMWEN=%d | RAMWADDR=%s | RAMWDATA=%s | RAMWMASK=%d",
+                    ref_reg_wen, ref_reg_waddr, to_hex(ref_reg_wdata),
+                    ref_ram_wen, to_hex(ref_ram_waddr), to_hex(ref_ram_wdata), ref_ram_wmask))
 
                 -- Difftest 比对逻辑
-                -- 比对 PC、寄存器写使能、寄存器地址和数据
-                local mismatch = (ref_pc ~= rtl_pc_s) or (ref_ena ~= rtl_ena)
-                if not mismatch and ref_ena == 1 and rtl_ena == 1 then
-                    mismatch = (ref_waddr ~= rtl_reg) or (ref_wdata ~= rtl_value_s)
+                local mismatch = (rtl_pc ~= ref_pc)
+                if ref_reg_wen == 1 then
+                    mismatch = (rtl_reg_wen ~= 1) or (rtl_reg_waddr ~= ref_reg_waddr) or (rtl_reg_wdata ~= ref_reg_wdata)
+                end
+                if ref_ram_wen == 1 then
+                    mismatch = (rtl_ram_wen ~= 1) or (rtl_ram_waddr ~= ref_ram_waddr) or (rtl_ram_wdata ~= ref_ram_wdata) or (rtl_ram_wmask ~= ref_ram_wmask)
                 end
 
                 -- 检测到不匹配：打印所有值并终止仿真
                 if mismatch then
-                    print(f("\n\27[31m========== DIFFTEST MISMATCH ==========\27[0m"))
-                    print(f("[Cycle %d] [Commit #%d]", cycles, commit_count))
-                    print(f("  指令: %s @ PC=%s", to_hex(tobit(ref.inst)), to_hex(ref_pc)))
-                    print(f("  REF: PC=%s  WEN=%d  RD=x%-2d  WDATA=%s",
-                        to_hex(ref_pc), ref_ena, ref_waddr, to_hex(ref_wdata)))
-                    print(f("  RTL: PC=%s  WEN=%d  RD=x%-2d  WDATA=%s",
-                        to_hex(rtl_pc), rtl_ena, rtl_reg, to_hex(rtl_value)))
-                    print(f("\27[31m========================================\27[0m"))
+                    print(f("\n\27[31m========== RTL MISMATCH ==========\27[0m"))
+                    print(f("[Cycle 0x%s] [Commit #%d] [PC=%s] [RTL PC=%s]", to_hex(cycles), commit_count, to_hex(ref_pc), to_hex(rtl_pc)))
+                    print(f("  REF: REGWEN=%d | RD=x%-2d | REGWDATA=%s | RAMWEN=%d | RAMWADDR=%s | RAMWDATA=%s | RAMWMASK=%d",
+                    ref_reg_wen, ref_reg_waddr, to_hex(ref_reg_wdata),
+                    ref_ram_wen, to_hex(ref_ram_waddr), to_hex(ref_ram_wdata), ref_ram_wmask))
+                    print(f("  RTL: REGWEN=%d | RD=x%-2d | REGWDATA=%s | RAMWEN=%d | RAMWADDR=%s | RAMWDATA=%s | RAMWMASK=%d",
+                    rtl_reg_wen, rtl_reg_waddr, to_hex(rtl_reg_wdata),
+                    rtl_ram_wen, to_hex(rtl_ram_waddr), to_hex(rtl_ram_wdata), rtl_ram_wmask))
+                    test_print("fail")
                     io.flush()
-
-                    test_print()
                     sim.finish()
                     return
                 end
@@ -107,8 +125,8 @@ fork {
                 -- 检测到 ECALL：程序正常结束
                 if ref.ecall then
                     print(f("[INFO] 检测到 ECALL 程序正常结束: %d 个周期, %d 条指令提交", cycles, commit_count))
-                    io.flush()
                     test_print("success")
+                    io.flush()
                     sim.finish()
                     return
                 end

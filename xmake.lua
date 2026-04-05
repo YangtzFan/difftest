@@ -122,11 +122,12 @@ end)
 -- 运行前自动将 .bin 转换为 .hex 并写入 IROM 固定路径
 -- 测试用例同时加载到 RTL（通过 $readmemh）和模拟器（通过 Lua IO）
 -- 用法：
---   xmake run                     # 运行默认测试用例 (and)
---   TC=add xmake run              # 运行 add 测试用例
---   DUMP=1 TC=beq xmake run       # 运行 beq 并输出波形
+--   xmake build Core              # 编译验证组建
+--   xmake run Core                # 运行默认测试用例 (and)
+--   TC=add xmake run Core         # 运行 add 测试用例
+--   DUMP=1 TC=beq xmake Core      # 运行 beq 并输出波形
 -- ============================================================================
-target("run", function()
+target("Core", function()
     set_default(true)
     add_rules("verilua")
     add_toolchains("@vcs")
@@ -257,10 +258,11 @@ target("sim-all", function()
             os.execv("sh", { "-c", cmd })
 
             -- 读取退出码和日志，判定是否通过
+            -- 检测日志中是否包含 ECALL 正常结束的标识
             local exit_code_text = io.readfile(code_file) or "1"
             local exit_code = tonumber(exit_code_text:match("%d+")) or 1
             local log_text = io.readfile(log_file) or ""
-            local pass_mark = (log_text:find("TEST PASS", 1, true) ~= nil)
+            local pass_mark = (log_text:find("ECALL", 1, true) ~= nil)
             if exit_code == 0 and pass_mark then
                 table.insert(passed, case_name)
             else
@@ -305,13 +307,63 @@ target("sim-all", function()
             #passed, #passed > 0 and table.concat(passed, ", ") or "(none)")
         if #failed > 0 then
             cprint("${red underline}[INFO]${clear} 失败 (%d): %s", #failed, table.concat(failed, ", "))
+            raise(string.format("sim-all 完成，%d 个测试用例失败", #failed))
         else
             cprint("${green underline}[INFO]${clear} 失败 (%d): %s", #failed, "(none)")
         end
+    end)
+end)
 
-        -- 存在失败的测试用例时抛出异常
-        if #failed > 0 then
-            raise(string.format("sim-all 完成，%d 个测试用例失败", #failed))
+-- ============================================================================
+-- target: clean —— 清理构建产物和仿真中间文件
+-- ============================================================================
+-- 删除以下内容：
+--   - build/vcs/Core/sim_build/     VCS 编译产物
+--   - build/vcs/Core/*.fsdb*        FSDB 波形文件及其附属文件
+--   - build/vcs/Core/*.log          仿真日志
+--   - build/vcs/Core/*.key          Verdi 密钥文件
+--   - build/sim-all/                批量仿真输出目录
+--   - build/Core/irom.hex           运行时生成的 IROM hex 文件
+-- ============================================================================
+target("clean", function()
+    set_kind("phony")
+    set_default(false)
+    on_run(function()
+        local vcs_dir = path.join(build_dir, "vcs", "Core")
+
+        -- 清理 VCS 编译产物
+        os.tryrm(path.join(vcs_dir, "sim_build"))
+        cprint("${green underline}[INFO]${clear} 已清理 VCS 编译产物: sim_build/")
+
+        -- 清理 FSDB 波形文件（*.fsdb 及其附属文件 *.fsdb.*）
+        local fsdb_files = os.files(path.join(vcs_dir, "*.fsdb*"))
+        for _, f in ipairs(fsdb_files) do
+            os.tryrm(f)
         end
+        if #fsdb_files > 0 then
+            cprint("${green underline}[INFO]${clear} 已清理 %d 个 FSDB 波形文件", #fsdb_files)
+        end
+
+        -- 清理仿真日志
+        local log_files = os.files(path.join(vcs_dir, "*.log"))
+        for _, f in ipairs(log_files) do
+            os.tryrm(f)
+        end
+
+        -- 清理 Verdi 密钥文件
+        local key_files = os.files(path.join(vcs_dir, "*.key"))
+        for _, f in ipairs(key_files) do
+            os.tryrm(f)
+        end
+
+        -- 清理批量仿真输出
+        os.tryrm(path.join(build_dir, "sim-all"))
+        cprint("${green underline}[INFO]${clear} 已清理批量仿真输出: sim-all/")
+
+        -- 清理运行时生成的 IROM hex 文件
+        os.tryrm(irom_hex)
+        cprint("${green underline}[INFO]${clear} 已清理 IROM hex 文件")
+
+        cprint("${green underline}[INFO]${clear} 清理完成")
     end)
 end)
