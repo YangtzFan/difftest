@@ -9,28 +9,26 @@
 --   5. 发现不匹配时打印详细日志并终止仿真
 -- ============================================================================
 local utils = require "verilua.LuaUtils"
-local bit    = require("bit")
+local bit    = require "bit"
 local tobit  = bit.tobit
 
 -- 加载模拟器类并创建实例
-local Emu     = require "emu"
+local emu = require "emu"
 local tc = assert(os.getenv "TC", "获取 TC 环境变量失败")
-local emu = Emu(tc)
+local emu = emu(tc) --[[@as difftest.emulator]]
 
 local to_hex = utils.to_hex_str
 local f = string.format
 local print = print
 
--- 测试通过：打印绿色提示
-local function test_success()
-    print("\27[32m" .. "TEST PASS" .. "\27[0m")
-    io.flush()
-end
-
--- 测试失败：打印红色提示
-local function test_fail(msg)
-    print(f("\27[31m" .. "TEST FAIL: %s\27[0m", msg))
-    io.flush()
+local function test_print(msg)
+    if msg == "success" then
+        print("\27[32m" .. "TEST PASS" .. "\27[0m") -- 验证通过：打印绿色提示
+    elseif msg == "fail" then
+        print("\27[31m" .. "TEST FAIL: %s\27[0m") -- 验证失败：打印红色提示
+    else
+        assert(false, f("Unknown msg %s", msg))
+    end
 end
 
 local clock = dut.clock:chdl()
@@ -43,45 +41,39 @@ end
 
 fork {
     main_task = function()
-        dut_reset() -- 第一阶段：复位 RTL
+        dut_reset() -- 复位 RTL
         
         local cycles       = dut.cycles:get() -- 仿真周期计数
         local commit_count = 0                -- 累计提交指令数
         local MAX_CYCLES   = 100000           -- 最大仿真周期（防止死循环）
 
-        while cycles < MAX_CYCLES do -- 第二阶段：主仿真循环
+        while cycles < MAX_CYCLES do -- 主仿真循环
             cycles = cycles + 1
             clock:posedge()
 
             -- 读取 RTL 提交信号：本周期是否有指令提交
             local have_inst = dut.io_debug_wb_have_inst:get()
             if have_inst == 1 then
-                -- RTL 提交了一条指令
-                commit_count = commit_count + 1
-
-                -- 驱动参考模型执行一条指令
-                local inst_commit_table = emu:clock_step(1)
-                local ref = inst_commit_table[1]
-
                 -- 读取 RTL 的提交结果
                 local rtl_pc    = dut.io_debug_wb_pc:get()    -- 提交指令 PC
                 local rtl_ena   = dut.io_debug_wb_ena:get()   -- 寄存器写使能
                 local rtl_reg   = dut.io_debug_wb_reg:get()   -- 目的寄存器编号
                 local rtl_value = dut.io_debug_wb_value:get() -- 寄存器写入值
-
-                -- 参考模型结果（统一为有符号 32 位用于比较）
-                local ref_pc     = tobit(ref.pc)
-                local ref_ena    = ref.reg_wen and 1 or 0
-                local ref_waddr  = ref.reg_waddr
-                local ref_wdata  = tobit(ref.reg_wdata)
-
-                -- RTL 结果（Verilog wire 为无符号，通过 tobit 统一）
-                local rtl_pc_s    = tobit(rtl_pc)
+                local rtl_pc_s    = tobit(rtl_pc) -- Verilog wire 为无符号，通过 tobit 统一
                 local rtl_value_s = tobit(rtl_value)
 
-                -- ---- 打印提交日志 ----
+                -- 驱动参考模型执行一条指令，取出参考模型的结果
+                commit_count = commit_count + 1
+                local inst_commit_table = emu:commit_step(1)
+                local ref = inst_commit_table[1]
+                local ref_pc    = tobit(ref.pc)
+                local ref_ena   = ref.reg_wen and 1 or 0
+                local ref_waddr = ref.reg_waddr
+                local ref_wdata = tobit(ref.reg_wdata)
+
+                -- 打印提交日志
                 print(f("[Cycle %6d]\t[Commit #%d]\tPC=%s | WEN=%d | RD=x%-2d | WDATA=%s",
-                    cycles, commit_count, to_hex(ref_pc),
+                    cycles, emu.commit, to_hex(ref_pc),
                     ref_ena, ref_waddr, to_hex(ref_wdata)))
                 if ref.ram_wen then
                     print(f(" | MEM[%s]=%s(mask=%d)",
@@ -95,7 +87,7 @@ fork {
                     mismatch = (ref_waddr ~= rtl_reg) or (ref_wdata ~= rtl_value_s)
                 end
 
-                -- ====== 检测到不匹配：打印所有值并终止仿真 ======
+                -- 检测到不匹配：打印所有值并终止仿真
                 if mismatch then
                     print(f("\n\27[31m========== DIFFTEST MISMATCH ==========\27[0m"))
                     print(f("[Cycle %d] [Commit #%d]", cycles, commit_count))
@@ -107,16 +99,25 @@ fork {
                     print(f("\27[31m========================================\27[0m"))
                     io.flush()
 
-                    test_fail("Difftest mismatch at commit #" .. commit_count)
+                    test_print()
+                    sim.finish()
+                    return
+                end
+
+                -- 检测到 ECALL：程序正常结束
+                if ref.ecall then
+                    print(f("[INFO] 检测到 ECALL 程序正常结束: %d 个周期, %d 条指令提交", cycles, commit_count))
+                    io.flush()
+                    test_print("success")
                     sim.finish()
                     return
                 end
             end
         end
-        -- 达到最大周期数，未发现不匹配，视为通过
-        print(f("\n[INFO] 仿真完成: %d 个周期, %d 条指令提交, 未发现不匹配\n", cycles, commit_count))
+        -- 达到最大周期数，视为运行超时
+        print(f("\27[31m[ERROR] 运行超时: %d 个周期内未检测到 ECALL (共提交 %d 条指令)\27[0m", MAX_CYCLES, commit_count))
         io.flush()
-        test_success()
+        test_print("fail")
         sim.finish()
     end
 }

@@ -163,8 +163,12 @@ target("run", function()
     --   4. 每行格式（高位到低位）：word3 word2 word1 word0
     --      对应 128 位数据的 [127:96] [95:64] [63:32] [31:0]
     --   5. 每个 word 从 4 字节小端序读取
-    before_run(function(target)
-        local tc_name = os.getenv("TC") or "and"
+    before_run(function()
+        local tc_name = os.getenv("TC")
+        if not tc_name or tc_name == "" then 
+            tc_name = "and"
+            os.setenv("TC", "and")
+        end
         local bin_file = path.join(tc_dir, tc_name .. ".bin")
         if not os.isfile(bin_file) then
             raise("测试用例未找到: " .. bin_file)
@@ -205,8 +209,8 @@ target("run", function()
 
         cprint("${green underline}[INFO]${clear} 已将测试用例 '%s' 转换为 hex: %s", tc_name, irom_hex)
     end)
-
-    set_values("cfg.lua_main", "src/main.lua")
+    
+    set_values("cfg.lua_main", path.join(src_dir, "main.lua"))
 end)
 
 -- ============================================================================
