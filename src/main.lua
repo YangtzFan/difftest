@@ -93,7 +93,7 @@ fork {
 
                 -- 打印提交日志
                 print(f("[Cycle 0x%s] [Commit #%d] [PC=%s]", to_hex(cycles), emu.commit, to_hex(ref_pc)))
-                print(f("\tREGWEN=%d | RD=x%-2d | REGWDATA=%s | RAMWEN=%d | RAMWADDR=%s | RAMWDATA=%s | RAMWMASK=%d",
+                print(f("  REF: REGWEN=%d | RD=x%-2d | REGWDATA=%s | RAMWEN=%d | RAMWADDR=%s | RAMWDATA=%s | RAMWMASK=%d",
                     ref_reg_wen, ref_reg_waddr, to_hex(ref_reg_wdata),
                     ref_ram_wen, to_hex(ref_ram_waddr), to_hex(ref_ram_wdata), ref_ram_wmask))
 
@@ -108,11 +108,8 @@ fork {
 
                 -- 检测到不匹配：打印所有值并终止仿真
                 if mismatch then
-                    print(f("\n\27[31m========== RTL MISMATCH ==========\27[0m"))
+                    print(f("\27[31m========== RTL MISMATCH ==========\27[0m"))
                     print(f("[Cycle 0x%s] [Commit #%d] [PC=%s] [RTL PC=%s]", to_hex(cycles), commit_count, to_hex(ref_pc), to_hex(rtl_pc)))
-                    print(f("  REF: REGWEN=%d | RD=x%-2d | REGWDATA=%s | RAMWEN=%d | RAMWADDR=%s | RAMWDATA=%s | RAMWMASK=%d",
-                    ref_reg_wen, ref_reg_waddr, to_hex(ref_reg_wdata),
-                    ref_ram_wen, to_hex(ref_ram_waddr), to_hex(ref_ram_wdata), ref_ram_wmask))
                     print(f("  RTL: REGWEN=%d | RD=x%-2d | REGWDATA=%s | RAMWEN=%d | RAMWADDR=%s | RAMWDATA=%s | RAMWMASK=%d",
                     rtl_reg_wen, rtl_reg_waddr, to_hex(rtl_reg_wdata),
                     rtl_ram_wen, to_hex(rtl_ram_waddr), to_hex(rtl_ram_wdata), rtl_ram_wmask))
