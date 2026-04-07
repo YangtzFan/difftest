@@ -51,7 +51,7 @@ fork {
         -- 检查 DUMP 环境变量：如果设置了 DUMP=1，则启用 FSDB 波形记录
         -- 波形文件将保存到 build/vcs/Core 目录下，文件名基于测试用例名称
         if os.getenv("DUMP") then
-            sim.dump_wave(tc)
+            sim.dump_wave(tc .. ".vcd")
         end
 
         dut_reset() -- 复位 RTL
