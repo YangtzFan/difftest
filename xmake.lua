@@ -8,11 +8,13 @@
 -- ============================================================================
 
 local prj_dir = os.curdir()
-local tc_dir = path.join(prj_dir, "test_cases")          -- 测试用例目录
-local src_dir = path.join(prj_dir, "src")                 -- Lua 源码目录
-local rtl_prj_dir = path.join(prj_dir, "byPass")          -- Chisel RTL 子项目
+local tc_dir = path.join(prj_dir, "test_cases")            -- 测试用例目录
+local src_dir = path.join(prj_dir, "src")                  -- Lua 源码目录
+local rtl_prj_dir = path.join(prj_dir, "byPass")           -- Chisel RTL 子项目
 local build_dir = path.join(prj_dir, "build")              -- 构建产物目录
 local rtl_dir = path.join(build_dir, "Core")               -- 生成的 RTL 目录
+
+local sim = os.getenv("SIM") or "vcs"
 
 -- IROM 的 hex 文件固定路径，用于运行时动态加载测试用例到 RTL 的 IROM
 local irom_hex = path.join(rtl_dir, "irom.hex")
@@ -130,7 +132,12 @@ end)
 target("Core", function()
     set_default(true)
     add_rules("verilua")
-    add_toolchains("@vcs")
+
+    if sim == "verilator" then
+        add_toolchains("@verilator")
+    elseif sim == "vcs" then 
+        add_toolchains("@vcs")
+    end
 
     add_files(
         path.join(src_dir, "*.lua"),
@@ -143,14 +150,29 @@ target("Core", function()
 
     set_values("cfg.build_dir_name", "Core")
     set_values("cfg.top", "SoC_Top")
-    add_values("cfg.tb_gen_flags", "--single-unit")
-
-    add_values("vcs.flags", "+define+ASSERT_VERBOSE_CO0_test_for_smokeND_=1", "+define+STOP_COND_=1")
-    add_values("vcs.flags",
+    add_values("cfg.tb_gen_flags", 
         "+incdir+" .. path.join(rtl_dir, "verification"),
         "+incdir+" .. path.join(rtl_dir, "verification", "assert"),
         "+incdir+" .. path.join(rtl_dir, "verification", "assume"),
-        "+incdir+" .. path.join(rtl_dir, "verification", "cover")
+        "+incdir+" .. path.join(rtl_dir, "verification", "cover"),
+        "--single-unit"
+    )
+
+    add_values("vcs.flags", "+define+ASSERT_VERBOSE_CO0_test_for_smokeND_=1", "+define+STOP_COND_=1")
+    add_values("vcs.flags",
+        "+incdir+" .. path.join(SNF_dir, "verification"),
+        "+incdir+" .. path.join(SNF_dir, "verification", "assert"),
+        "+incdir+" .. path.join(SNF_dir, "verification", "assume"),
+        "+incdir+" .. path.join(SNF_dir, "verification", "cover")
+    )
+
+    add_values("verilator.flags", "+define+ASSERT_VERBOSE_CO0_test_for_smokeND_=1", "+define+STOP_COND_=1")
+    add_values("verilator.flags",
+        "+incdir+" .. path.join(rtl_dir, "verification"),
+        "+incdir+" .. path.join(rtl_dir, "verification", "assert"),
+        "+incdir+" .. path.join(rtl_dir, "verification", "assume"),
+        "+incdir+" .. path.join(rtl_dir, "verification", "cover"),
+        "--trace", "--no-trace-top", "--threads 4"
     )
 
     -- ============================================================
