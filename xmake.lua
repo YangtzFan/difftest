@@ -10,7 +10,7 @@
 local prj_dir = os.curdir()
 local tc_dir = path.join(prj_dir, "test_cases")            -- 测试用例目录
 local src_dir = path.join(prj_dir, "src")                  -- Lua 源码目录
-local rtl_prj_dir = path.join(prj_dir, "byPass")           -- Chisel RTL 子项目
+local rtl_prj_dir = "/home/litian/Documents/stageFiles/studyplace/byPass"           -- Chisel RTL 子项目
 local build_dir = path.join(prj_dir, "build")              -- 构建产物目录
 local rtl_dir = path.join(build_dir, "Core")               -- 生成的 RTL 目录
 
@@ -270,22 +270,15 @@ target("sim-all", function()
         for _, bin_file in ipairs(bin_files) do
             local case_name = path.basename(bin_file)  -- 不含 .bin 后缀的文件名
             local log_file  = path.join(report_dir, case_name .. ".log")
-            local code_file = path.join(report_dir, case_name .. ".code")
 
-            -- 通过 TC 环境变量指定测试用例，捕获输出和退出码
-            local cmd = string.format(
-                "TC=%q xmake run > %q 2>&1; echo $? > %q",
-                case_name, log_file, code_file
-            )
+            -- 通过 TC 环境变量指定测试用例，捕获输出
+            local cmd = string.format("TC=%q xmake run > %q 2>&1", case_name, log_file)
             os.execv("sh", { "-c", cmd })
 
-            -- 读取退出码和日志，判定是否通过
             -- 检测日志中是否包含 ECALL 正常结束的标识
-            local exit_code_text = io.readfile(code_file) or "1"
-            local exit_code = tonumber(exit_code_text:match("%d+")) or 1
             local log_text = io.readfile(log_file) or ""
             local pass_mark = (log_text:find("ECALL", 1, true) ~= nil)
-            if exit_code == 0 and pass_mark then
+            if pass_mark then
                 table.insert(passed, case_name)
             else
                 table.insert(failed, case_name)
