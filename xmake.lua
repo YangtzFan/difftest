@@ -10,7 +10,7 @@
 local prj_dir = os.curdir()
 local tc_dir = path.join(prj_dir, "test_cases")            -- 测试用例目录
 local src_dir = path.join(prj_dir, "src")                  -- Lua 源码目录
-local rtl_prj_dir = "/home/litian/Documents/stageFiles/studyplace/byPass"           -- Chisel RTL 子项目
+local rtl_prj_dir = path.join(prj_dir, "byPass")           -- Chisel RTL 子项目
 local build_dir = path.join(prj_dir, "build")              -- 构建产物目录
 local rtl_dir = path.join(build_dir, "Core")               -- 生成的 RTL 目录
 

@@ -58,15 +58,17 @@ fork {
         
         local cycles       = dut.cycles:get() -- 仿真周期计数
         local commit_count = 0                -- 累计提交指令数
-        local MAX_CYCLES   = 100000           -- 最大仿真周期（防止死循环）
+        local stall        = 0
+        local MAX_STALL    = 10000         -- 最大仿真周期（防止死循环）
 
-        while cycles < MAX_CYCLES do -- 主仿真循环
+        while true do -- 主仿真循环
             cycles = cycles + 1
             clock:posedge()
 
             -- 读取 RTL 提交信号：本周期是否有指令提交
             local have_inst = dut.io_debug_commit_have_inst:get()
             if have_inst == 1 then
+                stall = 0
                 -- 读取 RTL 的提交结果，通过 tobit 统一
                 local rtl_pc        = tobit(dut.io_debug_commit_pc:get())
                 local rtl_reg_wen   = dut.io_debug_commit_reg_wen:get()
@@ -97,6 +99,15 @@ fork {
                     ref_reg_wen, ref_reg_waddr, to_hex(ref_reg_wdata),
                     ref_ram_wen, to_hex(ref_ram_waddr), to_hex(ref_ram_wdata), ref_ram_wmask))
 
+                -- 检测到 ECALL：程序正常结束
+                if ref.ecall then
+                    print(f("[INFO] 检测到 ECALL 程序正常结束: %d 个周期, %d 条指令提交", cycles, commit_count))
+                    test_print("success")
+                    io.flush()
+                    sim.finish()
+                    return
+                end
+
                 -- Difftest 比对逻辑
                 local mismatch = (rtl_pc ~= ref_pc)
                 if ref_reg_wen == 1 then
@@ -118,21 +129,16 @@ fork {
                     sim.finish()
                     return
                 end
+            else
+                stall = stall + 1
+            end
 
-                -- 检测到 ECALL：程序正常结束
-                if ref.ecall then
-                    print(f("[INFO] 检测到 ECALL 程序正常结束: %d 个周期, %d 条指令提交", cycles, commit_count))
-                    test_print("success")
-                    io.flush()
-                    sim.finish()
-                    return
-                end
+            if stall >= MAX_STALL then -- 达到最大周期数，视为运行超时
+                print(f("\27[31m[ERROR] 运行超时: %d 个周期内未检测到有效指令 (共提交 %d 条指令)\27[0m", MAX_STALL, commit_count))
+                io.flush()
+                test_print("fail")
+                sim.finish()
             end
         end
-        -- 达到最大周期数，视为运行超时
-        print(f("\27[31m[ERROR] 运行超时: %d 个周期内未检测到 ECALL (共提交 %d 条指令)\27[0m", MAX_CYCLES, commit_count))
-        io.flush()
-        test_print("fail")
-        sim.finish()
     end
 }
