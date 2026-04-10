@@ -25,9 +25,10 @@ xmake run sim-all
 切换测试用例 **无需重新编译 RTL 或 VCS**，框架会自动将 `.bin` 转换为 `.hex` 并加载到 IROM。
 
 ```bash
-TC=jal xmake run            # 运行 jal 测试
-TC=pressure_test xmake run  # 运行压力测试
+TC=jal xmake run # 运行 jal 测试
+TC=and xmake run # 运行 and 测试
 ```
+`test_cases_pressure` 目录下的测试用例只能在 FPGA 开发板上运行，不要使用模拟器运行。
 
 ## 批量测试
 
