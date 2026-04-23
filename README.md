@@ -34,9 +34,42 @@ TC=and xmake run # 运行 and 测试
 
 `sim-all` 会遍历 `test_cases/` 下所有 `.bin` 文件，逐个执行 difftest 仿真：
 
-- 日志输出：`build/sim-all/<case>.log`
-- 汇总报告：`build/sim-all/summary.txt`
-- 判定标准：进程退出码为 `0` 且输出包含 `TEST PASS`
+- 子进程 stdout 捕获到内存，不落地日志文件，也不生成 `summary.txt`。
+- 判定标准：仿真输出中包含 `ECALL`（参考模型正常触发 ECALL 结束）。
+- 终端会打印通过 / 失败用例列表；若有失败则非零退出。
+- 每个用例仍会生成 `build/sim-data/<case>.csv`，供绘图脚本使用（见下文）。
+
+## 仿真数据与可视化
+
+每次运行 `xmake run Core`（无论 `sim-all` 还是单用例）都会在
+`build/sim-data/<case>.csv` 写入每周期的采样数据，列含义如下：
+
+| 列名 | 含义 |
+| --- | --- |
+| `cycle` | 当前周期号 |
+| `fb` / `iq` / `rob` / `sb` / `sq` | FetchBuffer / IssueQueue / ROB / StoreBuffer / AXIStoreQueue 的有效条目数 |
+| `commits` | 截至该周期起始的累计已提交指令数 |
+| `ipc` | 累计平均 IPC（`commits / cycle`） |
+
+使用 `plot_sim.py` 可将 CSV 绘制为占用率 + IPC 双子图：
+
+```bash
+# 全部周期
+python3 plot_sim.py and
+
+# 从第 150 周期绘制到末尾
+python3 plot_sim.py sw 150
+
+# 绘制 100~200 周期（两个参数顺序无关，100 200 与 200 100 等价）
+python3 plot_sim.py sw 100 200
+
+# 保存到文件而非弹窗显示
+python3 plot_sim.py and -o and.png
+```
+
+- 若请求区间内某段没有数据，不会强行补点，但横轴仍保留该区间范围。
+- 需要 `matplotlib`，可通过 `pip install matplotlib` 安装。
+- `xmake run clean` 会一并清理 `build/sim-data/` 目录。
 
 ## 项目结构
 

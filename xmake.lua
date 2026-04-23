@@ -198,6 +198,17 @@ target("Core", function()
         end
         os.mkdir(rtl_dir)
 
+        -- ========================================================
+        -- 准备仿真数据 CSV 输出路径：build/sim-data/<case>.csv
+        -- 以绝对路径通过环境变量 SIM_DATA_FILE 传给 main.lua，避免
+        -- main.lua 运行时的工作目录与项目根不一致导致路径错乱。
+        -- ========================================================
+        local sim_data_dir  = path.join(build_dir, "sim-data")
+        os.mkdir(sim_data_dir)
+        local sim_data_file = path.absolute(path.join(sim_data_dir, tc_name .. ".csv"))
+        os.setenv("SIM_DATA_FILE", sim_data_file)
+        cprint("${green underline}[INFO]${clear} 每周期数据将写入: %s", sim_data_file)
+
         -- 读取二进制文件
         local fh = assert(io.open(bin_file, "rb"))
         local data = fh:read("*a")
@@ -237,13 +248,13 @@ target("Core", function()
 end)
 
 -- ============================================================================
--- target: sim-all —— 批量运行所有测试用例并输出汇总报告
+-- target: sim-all —— 批量运行所有测试用例
 -- ============================================================================
--- 遍历 test_cases/ 目录下所有 .bin 文件，逐个运行 difftest 仿真
--- 判定标准：进程退出码为 0 且输出包含 "TEST PASS"
--- 输出：
---   build/sim-all/<case>.log   —— 每个测试用例的完整日志
---   build/sim-all/summary.txt  —— 通过/失败汇总列表
+-- 遍历 test_cases/ 目录下所有 .bin 文件，逐个运行 difftest 仿真。
+-- 判定标准：子进程 stdout 中包含 "ECALL"（表示参考模型检测到 ECALL 而正常结束）。
+-- 本 target 不再落地仿真日志文件，也不再生成 summary.txt，只在终端输出简洁汇总。
+-- 但每个用例的每周期占用/IPC 数据仍然由 Core 仿真自动写入 build/sim-data/<case>.csv，
+-- 供 scripts/plot_sim.py 绘图使用（见 clean 目标也会清理该目录）。
 -- ============================================================================
 target("sim-all", function()
     set_kind("phony")
@@ -257,26 +268,33 @@ target("sim-all", function()
             raise("test_cases 目录下未找到任何 .bin 文件")
         end
 
-        -- 创建报告输出目录
-        local report_dir = path.join(build_dir, "sim-all")
-        os.mkdir(report_dir)
-
         local passed = {}
         local failed = {}
 
         cprint("${cyan underline}[INFO]${clear} 开始运行 %d 个测试用例", #bin_files)
 
-        -- 逐个运行测试用例
+        -- 逐个运行测试用例：用 popen 捕获 stdout 到内存，读完即丢弃
         for _, bin_file in ipairs(bin_files) do
             local case_name = path.basename(bin_file)  -- 不含 .bin 后缀的文件名
-            local log_file  = path.join(report_dir, case_name .. ".log")
 
-            -- 通过 TC 环境变量指定测试用例，捕获输出
-            local cmd = string.format("TC=%q xmake r Core > %q 2>&1", case_name, log_file)
-            os.execv("sh", { "-c", cmd })
+            -- 使用 xmake 内置的 os.iorunv 在子进程中运行仿真，捕获 stdout 到内存；
+            -- 通过 envs 选项向子进程注入 TC 环境变量。xmake 沙箱禁用 io.popen/pcall，
+            -- 因此改用 os.iorunv + try{} 模式。子进程非零退出会抛异常，在 catch 中
+            -- 把异常字符串（通常包含 stdout）当作日志扫描即可。
+            local log_text = ""
+            try {
+                function()
+                    local stdout, stderr = os.iorunv("xmake",
+                        {"r", "Core"}, {envs = {TC = case_name}})
+                    log_text = (stdout or "") .. (stderr or "")
+                end,
+                catch {
+                    function(errors)
+                        log_text = tostring(errors or "")
+                    end
+                }
+            }
 
-            -- 检测日志中是否包含 ECALL 正常结束的标识
-            local log_text = io.readfile(log_file) or ""
             local pass_mark = (log_text:find("ECALL", 1, true) ~= nil)
             if pass_mark then
                 table.insert(passed, case_name)
@@ -286,38 +304,8 @@ target("sim-all", function()
         end
 
         -- ============================================================
-        -- 输出汇总报告
+        -- 终端输出简洁汇总（不写任何文件）
         -- ============================================================
-        local summary_lines = {}
-        table.insert(summary_lines, "SIM-ALL SUMMARY")
-        table.insert(summary_lines, string.format("Total: %d", #bin_files))
-        table.insert(summary_lines, string.format("Passed: %d", #passed))
-        table.insert(summary_lines, string.format("Failed: %d", #failed))
-        table.insert(summary_lines, "")
-        table.insert(summary_lines, "Passed:")
-        if #passed == 0 then
-            table.insert(summary_lines, "- (none)")
-        else
-            for _, name in ipairs(passed) do
-                table.insert(summary_lines, "- " .. name)
-            end
-        end
-        table.insert(summary_lines, "")
-        table.insert(summary_lines, "Failed:")
-        if #failed == 0 then
-            table.insert(summary_lines, "- (none)")
-        else
-            for _, name in ipairs(failed) do
-                table.insert(summary_lines, "- " .. name)
-            end
-        end
-
-        -- 写入汇总文件
-        local summary_file = path.join(report_dir, "summary.txt")
-        io.writefile(summary_file, table.concat(summary_lines, "\n") .. "\n")
-
-        -- 在终端输出汇总信息
-        cprint("${green underline}[INFO]${clear} 汇总报告已写入: %s", summary_file)
         cprint("${green underline}[INFO]${clear} 通过 (%d): %s",
             #passed, #passed > 0 and table.concat(passed, ", ") or "(none)")
         if #failed > 0 then
@@ -371,9 +359,13 @@ target("clean", function()
             os.tryrm(f)
         end
 
-        -- 清理批量仿真输出
+        -- 清理批量仿真输出（旧版 sim-all 可能残留）
         os.tryrm(path.join(build_dir, "sim-all"))
         cprint("${green underline}[INFO]${clear} 已清理批量仿真输出: sim-all/")
+
+        -- 清理每周期仿真数据（占用 + IPC 的 CSV）
+        os.tryrm(path.join(build_dir, "sim-data"))
+        cprint("${green underline}[INFO]${clear} 已清理仿真数据: sim-data/")
 
         -- 清理运行时生成的 IROM hex 文件
         os.tryrm(irom_hex)
