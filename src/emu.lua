@@ -14,9 +14,8 @@
 local class = require "pl.class"
 
 local bit = require "bit"
-local band, bor, bxor, lshift, rshift, arshift =
-    bit.band, bit.bor, bit.bxor, bit.lshift, bit.rshift, bit.arshift
-local tobit = bit.tobit
+local band, bor, bxor, lshift, rshift, arshift, tobit
+    = bit.band, bit.bor, bit.bxor, bit.lshift, bit.rshift, bit.arshift, bit.tobit
 local assert = assert
 local f = string.format
 
@@ -313,7 +312,7 @@ function emu:decode(inst)
     elseif opcode == OP_R or opcode == OP_SYSTEM or opcode == OP_FENCE then
         d.imm = 0
     else
-        assert(false, f("Unknown opcode %d", opcode))
+        assert(false, f("[EMU] Unknown opcode %d", opcode))
     end
 
     return d
@@ -393,7 +392,7 @@ function emu:execute(d)
         elseif funct3 == 7 then     -- BGEU: 无符号大于等于时跳转
             taken = (to_u32(rs1_val) >= to_u32(rs2_val))
         else
-            error(f("未知分支指令 funct3=%d, PC=0x%08X", funct3, pc))
+            error(f("[EMU] 未知分支指令 funct3=%d, PC=0x%08X", funct3, pc))
         end
         if taken then
             next_pc = to_u32(tobit(pc + d.imm))
@@ -414,7 +413,7 @@ function emu:execute(d)
         elseif funct3 == 5 then     -- LHU: 读取 2 字节，零扩展
             loaded = self:read_half_unsigned(addr)
         else
-            error(f("未知加载指令 funct3=%d, PC=0x%08X", funct3, pc))
+            error(f("[EMU] 未知加载指令 funct3=%d, PC=0x%08X", funct3, pc))
         end
         rd_val   = loaded
         write_rd = true
@@ -429,7 +428,7 @@ function emu:execute(d)
         elseif funct3 == 2 then     -- SW: 写入 4 字节（rs2 完整 32 位）
             self:write_word(addr, rs2_val)
         else
-            error(f("未知存储指令 funct3=%d, PC=0x%08X", funct3, pc))
+            error(f("[EMU] 未知存储指令 funct3=%d, PC=0x%08X", funct3, pc))
         end
         -- 记录 RAM 写入信息，供提交记录使用
         commit.ram_wen   = true
@@ -464,7 +463,7 @@ function emu:execute(d)
                 rd_val = rshift(rs1_val, shamt)
             end
         else
-            error(f("未知立即数运算指令 funct3=%d, PC=0x%08X", funct3, pc))
+            error(f("[EMU] 未知立即数运算指令 funct3=%d, PC=0x%08X", funct3, pc))
         end
         write_rd = true
 
@@ -495,16 +494,16 @@ function emu:execute(d)
         elseif funct3 == 7 then     -- AND: rd = rs1 & rs2
             rd_val = band(rs1_val, rs2_val)
         else
-            error(f("未知寄存器运算指令 funct3=%d, PC=0x%08X", funct3, pc))
+            error(f("[EMU] 未知寄存器运算指令 funct3=%d, PC=0x%08X", funct3, pc))
         end
         write_rd = true
 
     elseif opcode == OP_FENCE then
+        assert(false, "[EMU] 不支持解析 FENCE 指令")
         -- ============================================================
         -- FENCE: 内存顺序指令
         -- 在顺序单发射核中无实际效果，PC 正常 +4
         -- ============================================================
-
     elseif opcode == OP_SYSTEM then
         -- ============================================================
         -- ECALL/EBREAK: 系统调用/断点
@@ -516,6 +515,7 @@ function emu:execute(d)
         end
 
     else
+        assert(false, "[EMU] 未知指令")
         -- ============================================================
         -- 未识别的操作码：视为空操作（NOP）
         -- RTL 对未识别指令也会正常通过流水线提交，regWen=false

@@ -27,11 +27,6 @@
       ".vscode",
       ".xmake",
       "build",
-      "TestDongJiangV2/test_cases",
-      "TestDongJiangV2/tc_main.lua",
-      "TestDongJiangV2/main.lua",
-      "TestZhuJiangUtils/xmake",
-      "ZhuJiang-NG",
       "temp"
     ],
     "ignoreGlobs": [],
