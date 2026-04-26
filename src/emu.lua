@@ -199,7 +199,19 @@ function emu:_init(tc_name, options)
     -- emu.lua 位于 src/emu.lua，项目根目录 = 脚本所在目录的父目录
     local src_dir = debug.getinfo(1, "S").source:match("@?(.*/)") or "./"
     local prj_dir = src_dir:match("^(.*/)[^/]+/$") or "./"
-    local bin_path = prj_dir .. "test_cases/" .. tc_name .. ".bin"
+    -- 在 test_cases_basic / test_cases_regressive 中依次查找 <tc>.bin
+    local search_subdirs = { "test_cases_basic/", "test_cases_regressive/" }
+    local bin_path
+    for _, sub in ipairs(search_subdirs) do
+        local candidate = prj_dir .. sub .. tc_name .. ".bin"
+        local fh = io.open(candidate, "rb")
+        if fh then
+            fh:close()
+            bin_path = candidate
+            break
+        end
+    end
+    assert(bin_path, "无法打开指令文件: " .. tc_name .. ".bin (已搜索 test_cases_basic/, test_cases_regressive/)")
     local file = assert(io.open(bin_path, "rb"), "无法打开指令文件: " .. bin_path)
 
     self.pc = 0 -- 程序计数器，初始化为 0

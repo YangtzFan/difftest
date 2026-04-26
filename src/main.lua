@@ -54,10 +54,10 @@ end
 -- 变化，这里也必须同步更新，否则 IPC 打印中的“分母”会失真。
 -- ============================================================================
 local FB_DEPTH  = 16   -- FetchBuffer    (CPUConfig.fetchBufferEntries)
-local IQ_DEPTH  = 16   -- IssueQueue     (CPUConfig.issueQueueEntries)
+local IQ_DEPTH  = 32   -- IssueQueue     (CPUConfig.issueQueueEntries)
 local ROB_DEPTH = 128  -- ROB            (CPUConfig.robEntries)
-local SB_DEPTH  = 32   -- StoreBuffer    (CPUConfig.sbEntries)
-local SQ_DEPTH  = 32   -- AXIStoreQueue  (CPUConfig.axiSqEntries)
+local SB_DEPTH  = 16   -- StoreBuffer    (CPUConfig.sbEntries)
+local SQ_DEPTH  = 16   -- AXIStoreQueue  (CPUConfig.axiSqEntries)
 
 -- FetchBuffer/ROB 采用“环形指针多 1 位”的方案：count = (tail - head) mod 2^(idxW+1)
 -- 其中指针位宽 = log2Ceil(depth) + 1，因此掩码就是 2*depth - 1。

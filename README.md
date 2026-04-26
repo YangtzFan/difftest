@@ -21,7 +21,7 @@ xmake run sim-all
 
 ## 切换测试用例
 
-通过环境变量 `TC` 指定测试用例名称（对应 `test_cases/<name>.bin`）。  
+通过环境变量 `TC` 指定测试用例名称（对应 `test_cases_basic/<name>.bin` 或 `test_cases_regressive/<name>.bin`）。  
 切换测试用例 **无需重新编译 RTL 或 VCS**，框架会自动将 `.bin` 转换为 `.hex` 并加载到 IROM。
 
 ```bash
@@ -32,12 +32,12 @@ TC=and xmake run # 运行 and 测试
 
 ## 批量测试
 
-`sim-all` 会遍历 `test_cases/` 下所有 `.bin` 文件，逐个执行 difftest 仿真：
+`sim-basic` 和 `sim-regressive` 逐个执行 `test_cases_basic/` 和 `test_cases_regressive` 下所有 `.bin` 文件的 difftest 仿真：
 
-- 子进程 stdout 捕获到内存，不落地日志文件，也不生成 `summary.txt`。
 - 判定标准：仿真输出中包含 `ECALL`（参考模型正常触发 ECALL 结束）。
-- 终端会打印通过 / 失败用例列表；若有失败则非零退出。
+- 终端会打印通过 / 失败用例列表 / 超时用例列表；若有失败则非零退出。
 - 每个用例仍会生成 `build/sim-data/<case>.csv`，供绘图脚本使用（见下文）。
+- 可通过设置环境变量 `TIMEOUT=120` 修改判定耗时过长阈值为 120s，否则默认为 60s。
 
 ## 仿真数据与可视化
 
@@ -75,6 +75,6 @@ python3 plot_sim.py and -o and.png
 
 - `src/emu.lua` — RV32I 参考模型（状态、取指、译码、执行、内存访问）
 - `src/main.lua` — Difftest 主控逻辑（驱动时钟、比对结果）
-- `test_cases/` — RV32I 测试用例二进制文件
+- `test_cases_basic/` 和 `test_cases_regressive/` — RV32I 测试用例二进制文件
 - `byPass/` — Chisel RTL 子项目
 - `build/Core/` — 生成的 RTL 及 IROM hex 文件

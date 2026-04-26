@@ -8,11 +8,13 @@
 -- ============================================================================
 
 local prj_dir = os.curdir()
-local tc_dir = path.join(prj_dir, "test_cases")            -- 测试用例目录
+local tc_basic_dir      = path.join(prj_dir, "test_cases_basic")      -- 基础测试用例目录
+local tc_regressive_dir = path.join(prj_dir, "test_cases_regressive") -- 回归测试用例目录
 local src_dir = path.join(prj_dir, "src")                  -- Lua 源码目录
 local rtl_prj_dir = "/home/litian/Documents/stageFiles/studyplace/byPass"           -- Chisel RTL 子项目
-local build_dir = path.join(prj_dir, "build")              -- 构建产物目录
-local rtl_dir = path.join(build_dir, "Core")               -- 生成的 RTL 目录
+local build_dir = path.join(prj_dir, "build")             -- 构建产物目录
+local rtl_dir = path.join(build_dir, "Core")              -- 生成的 RTL 目录
+local timeout_sec = tonumber(os.getenv("TIMEOUT")) or 60  -- 单个用例最长执行时间 (秒)
 
 local sim = os.getenv("SIM") or "vcs"
 
@@ -112,7 +114,7 @@ target("rtl", function()
             io.replace(mem_sv, '$readmemh%(".-"', '$readmemh("' .. abs_hex_path .. '"')
             cprint("${green underline}[INFO]${clear} 已替换 mem_16384x128.sv 中的 $readmemh 路径: %s", abs_hex_path)
         else
-            cprint("${yellow underline}[WARNING]${clear} 未找到 mem_16384x128.sv，跳过 IROM 路径替换")
+            cprint("${yellow underline}[WARNING]${clear} 未找到 mem_16384x128.sv  跳过 IROM 路径替换")
         end
     end)
 end)
@@ -192,9 +194,20 @@ target("Core", function()
             tc_name = "and"
             os.setenv("TC", "and")
         end
-        local bin_file = path.join(tc_dir, tc_name .. ".bin")
-        if not os.isfile(bin_file) then
-            raise("测试用例未找到: " .. bin_file)
+
+        -- 在 test_cases_basic / test_cases_regressive 目录中依次查找 <TC>.bin
+        local search_dirs = { tc_basic_dir, tc_regressive_dir }
+        local bin_file
+        for _, d in ipairs(search_dirs) do
+            local candidate = path.join(d, tc_name .. ".bin")
+            if os.isfile(candidate) then
+                bin_file = candidate
+                break
+            end
+        end
+        if not bin_file then
+            raise(string.format("测试用例未找到: %s.bin (已搜索: %s, %s)",
+                tc_name, tc_basic_dir, tc_regressive_dir))
         end
         os.mkdir(rtl_dir)
 
@@ -248,56 +261,80 @@ target("Core", function()
 end)
 
 -- ============================================================================
--- target: sim-all —— 批量运行所有测试用例
+-- target: sim-basic / sim-regressive —— 批量运行测试用例
 -- ============================================================================
--- 遍历 test_cases/ 目录下所有 .bin 文件，逐个运行 difftest 仿真。
+-- sim-basic       遍历 test_cases_basic/*.bin
+-- sim-regressive  遍历 test_cases_regressive/*.bin
 -- 判定标准：子进程 stdout 中包含 "ECALL"（表示参考模型检测到 ECALL 而正常结束）。
 -- 本 target 不再落地仿真日志文件，也不再生成 summary.txt，只在终端输出简洁汇总。
 -- 但每个用例的每周期占用/IPC 数据仍然由 Core 仿真自动写入 build/sim-data/<case>.csv，
 -- 供 scripts/plot_sim.py 绘图使用（见 clean 目标也会清理该目录）。
 -- ============================================================================
-target("sim-all", function()
-    set_kind("phony")
-    set_default(false)
-    on_run(function()
+-- ============================================================================
+-- target: sim-basic / sim-regressive —— 批量运行测试用例
+-- ============================================================================
+-- sim-basic       遍历 test_cases_basic/*.bin
+-- sim-regressive  遍历 test_cases_regressive/*.bin
+-- 判定标准：子进程 stdout 中包含 "ECALL"（表示参考模型检测到 ECALL 而正常结束）。
+-- 本 target 不再落地仿真日志文件，也不再生成 summary.txt，只在终端输出简洁汇总。
+-- 但每个用例的每周期占用/IPC 数据仍然由 Core 仿真自动写入 build/sim-data/<case>.csv，
+-- 供 scripts/plot_sim.py 绘图使用（见 clean 目标也会清理该目录）。
+-- ============================================================================
+local function _make_batch_runner(label, dir)
+    return function()
         -- 收集所有测试用例并排序
-        local bin_files = os.files(path.join(tc_dir, "*.bin"))
+        local bin_files = os.files(path.join(dir, "*.bin"))
         table.sort(bin_files)
 
         if #bin_files == 0 then
-            raise("test_cases 目录下未找到任何 .bin 文件")
+            raise(string.format("%s 目录下未找到任何 .bin 文件", dir))
         end
 
-        local passed = {}
-        local failed = {}
+        local passed     = {}
+        local failed     = {}
+        local timeouted  = {}
 
-        cprint("${cyan underline}[INFO]${clear} 开始运行 %d 个测试用例", #bin_files)
+        cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (单例最长不超过 %ds)",
+            label, #bin_files, timeout_sec)
 
         -- 逐个运行测试用例：用 popen 捕获 stdout 到内存，读完即丢弃
         for _, bin_file in ipairs(bin_files) do
             local case_name = path.basename(bin_file)  -- 不含 .bin 后缀的文件名
 
-            -- 使用 xmake 内置的 os.iorunv 在子进程中运行仿真，捕获 stdout 到内存；
-            -- 通过 envs 选项向子进程注入 TC 环境变量。xmake 沙箱禁用 io.popen/pcall，
-            -- 因此改用 os.iorunv + try{} 模式。子进程非零退出会抛异常，在 catch 中
-            -- 把异常字符串（通常包含 stdout）当作日志扫描即可。
+            -- 使用系统 `timeout` 命令包裹 `xmake r Core`，超过 timeout_sec 秒发送 SIGTERM；
+            -- 5 秒宽限期后 (--kill-after=5) 仍未退出则发送 SIGKILL，保证不残留进程。
+            -- timeout 自身约定的退出码：超时被杀返回 124，被 SIGKILL 强杀返回 137。
             local log_text = ""
+            local err_text = ""
+            local t0 = os.time()
             try {
                 function()
-                    local stdout, stderr = os.iorunv("xmake",
-                        {"r", "Core"}, {envs = {TC = case_name}})
+                    local stdout, stderr = os.iorunv("timeout",
+                        {"--kill-after=5", tostring(timeout_sec), "xmake", "r", "Core"},
+                        {envs = {TC = case_name}})
                     log_text = (stdout or "") .. (stderr or "")
                 end,
                 catch {
                     function(errors)
-                        log_text = tostring(errors or "")
+                        err_text = tostring(errors or "")
+                        log_text = err_text
                     end
                 }
             }
+            local elapsed = os.time() - t0
 
             local pass_mark = (log_text:find("ECALL", 1, true) ~= nil)
+            -- 判定超时：timeout 命令以 124/137 退出，或实际运行时长达到上限阈值
+            local is_timeout = (not pass_mark) and (
+                err_text:find("exit: 124", 1, true) ~= nil or
+                err_text:find("exit: 137", 1, true) ~= nil or
+                elapsed >= timeout_sec
+            )
+
             if pass_mark then
                 table.insert(passed, case_name)
+            elseif is_timeout then
+                table.insert(timeouted, case_name)
             else
                 table.insert(failed, case_name)
             end
@@ -306,15 +343,33 @@ target("sim-all", function()
         -- ============================================================
         -- 终端输出简洁汇总（不写任何文件）
         -- ============================================================
-        cprint("${green underline}[INFO]${clear} 通过 (%d): %s",
-            #passed, #passed > 0 and table.concat(passed, ", ") or "(none)")
-        if #failed > 0 then
-            cprint("${red underline}[INFO]${clear} 失败 (%d): %s", #failed, table.concat(failed, ", "))
-            raise(string.format("sim-all 完成，%d 个测试用例失败", #failed))
-        else
-            cprint("${green underline}[INFO]${clear} 失败 (%d): %s", #failed, "(none)")
+        cprint("${green underline}[INFO]${clear} [%s] 通过 (%d): %s",
+            label, #passed, #passed > 0 and table.concat(passed, ", ") or "(none)")
+        if #failed > 0 then 
+            cprint("${red underline}[INFO]${clear} [%s] 失败 (%d): %s",
+                label, #failed, #failed > 0 and table.concat(failed, ", ") or "(none)")
         end
-    end)
+        if #timeouted > 0 then
+            cprint("${yellow underline}[INFO]${clear} [%s] 耗时过长 (%d): %s | ${red underline}用例编写不合理！${clear}",
+                label, #timeouted, #timeouted > 0 and table.concat(timeouted, ", ") or "(none)")
+        end
+        if #failed > 0 or #timeouted > 0 then
+            raise(string.format("%s 完成，%d 个失败，%d 个",
+                label, #failed, #timeouted))
+        end
+    end
+end
+
+target("sim-basic", function()
+    set_kind("phony")
+    set_default(false)
+    on_run(_make_batch_runner("sim-basic", tc_basic_dir))
+end)
+
+target("sim-regressive", function()
+    set_kind("phony")
+    set_default(false)
+    on_run(_make_batch_runner("sim-regressive", tc_regressive_dir))
 end)
 
 -- ============================================================================
@@ -358,10 +413,6 @@ target("clean", function()
         for _, f in ipairs(key_files) do
             os.tryrm(f)
         end
-
-        -- 清理批量仿真输出（旧版 sim-all 可能残留）
-        os.tryrm(path.join(build_dir, "sim-all"))
-        cprint("${green underline}[INFO]${clear} 已清理批量仿真输出: sim-all/")
 
         -- 清理每周期仿真数据（占用 + IPC 的 CSV）
         os.tryrm(path.join(build_dir, "sim-data"))

@@ -64,7 +64,7 @@ def find_csv(case_name: str) -> str:
     if not os.path.isfile(csv_path):
         print(
             f"[ERROR] 未找到仿真数据文件: {csv_path}\n"
-            f"        请先运行 'SIM=verilator TC={case_name} xmake r Core' 生成 CSV。",
+            f"        请先运行 'TC={case_name} xmake r Core' 生成 CSV。",
             file=sys.stderr,
         )
         sys.exit(1)
