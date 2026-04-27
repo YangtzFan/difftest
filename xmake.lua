@@ -20,6 +20,12 @@ local sim = os.getenv("SIM") or "vcs"
 
 -- IROM 的 hex 文件固定路径，用于运行时动态加载测试用例到 RTL 的 IROM
 local irom_hex = path.join(rtl_dir, "irom.hex")
+-- DRAM 的 hex 文件固定路径（v18 / TD-INDIR-B 新增）
+-- 背景：原仿真壳层只把 .bin 装入 IROM，DRAM 启动全 0；-O0 编译产物在 .rodata
+-- 段的只读数据（如 indirect_call_debug 的 OPS 函数指针表）读出全 0，触发架构性活循环。
+-- 修复：把 .bin 同步生成 dram.hex（每行一个 32-bit 字，按字地址 0,1,2,... 顺序），
+-- 并在 mem_65536x32.sv 中注入 $readmemh initial，使 DRAM 与 IROM 共享物理映像。
+local dram_hex = path.join(rtl_dir, "dram.hex")
 
 -- ============================================================================
 -- target: init —— 初始化子模块
@@ -115,6 +121,25 @@ target("rtl", function()
             cprint("${green underline}[INFO]${clear} 已替换 mem_16384x128.sv 中的 $readmemh 路径: %s", abs_hex_path)
         else
             cprint("${yellow underline}[WARNING]${clear} 未找到 mem_16384x128.sv  跳过 IROM 路径替换")
+        end
+
+        -- ============================================================
+        -- v18 / TD-INDIR-B：向 mem_65536x32.sv（DRAM 物理阵列）注入 $readmemh
+        -- ============================================================
+        -- DRAM.scala 用的是普通 Mem(...)，FIRRTL 不会自动生成 readmemh 占位；
+        -- 这里用文本注入：在 "always @(posedge W0_clk)" 之前插入 initial 块，
+        -- 使 RTL 启动时把 dram.hex（与 .bin 等价的 32-bit 字流）预载入 Memory。
+        -- 这样 RTL 数据 load 才能命中 .rodata / .data 段，与 emu.lua 的 dmem 预载对齐。
+        local dram_mem_sv = path.join(rtl_dir, "mem_65536x32.sv")
+        if os.isfile(dram_mem_sv) then
+            local abs_dram_hex = path.absolute(dram_hex)
+            io.replace(dram_mem_sv,
+                'reg [31:0] Memory[0:65535];',
+                string.format('reg [31:0] Memory[0:65535];\n  initial $readmemh("%s", Memory);', abs_dram_hex),
+                { plain = true })
+            cprint("${green underline}[INFO]${clear} 已向 mem_65536x32.sv 注入 DRAM $readmemh: %s", abs_dram_hex)
+        else
+            cprint("${yellow underline}[WARNING]${clear} 未找到 mem_65536x32.sv  跳过 DRAM 预载注入")
         end
     end)
 end)
@@ -288,6 +313,27 @@ target("Core", function()
         out:close()
 
         cprint("${green underline}[INFO]${clear} 已将测试用例 '%s' 转换为 hex: %s", tc_name, irom_hex)
+
+        -- ========================================================
+        -- v18 / TD-INDIR-B：同步生成 dram.hex
+        -- ========================================================
+        -- DRAM 物理阵列为 64K × 32-bit 字（mem_65536x32），$readmemh 默认从地址 0 开始
+        -- 顺序填入。每行写一个 32-bit word（小端打包），这样 byte 偏移 0..3 → 第 0 行字、
+        -- byte 偏移 4..7 → 第 1 行字……与 .bin 物理布局一致。
+        -- 仅指令段对应的字也会被写入 DRAM，但 IROM 走另一通道，互不影响。
+        local dram_lines = {}
+        for i = 1, #data, 4 do
+            local b0 = data:byte(i)
+            local b1 = data:byte(i + 1)
+            local b2 = data:byte(i + 2)
+            local b3 = data:byte(i + 3)
+            local word = b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+            dram_lines[#dram_lines + 1] = string.format("%08x", word)
+        end
+        local dout = assert(io.open(dram_hex, "w"))
+        dout:write(table.concat(dram_lines, "\n") .. "\n")
+        dout:close()
+        cprint("${green underline}[INFO]${clear} 已将测试用例 '%s' 转换为 dram hex: %s", tc_name, dram_hex)
     end)
     
     set_values("cfg.lua_main", path.join(src_dir, "main.lua"))
@@ -454,6 +500,9 @@ target("clean", function()
         -- 清理运行时生成的 IROM hex 文件
         os.tryrm(irom_hex)
         cprint("${green underline}[INFO]${clear} 已清理 IROM hex 文件")
+        -- v18：同步清理 DRAM hex 文件
+        os.tryrm(dram_hex)
+        cprint("${green underline}[INFO]${clear} 已清理 DRAM hex 文件")
 
         cprint("${green underline}[INFO]${clear} 清理完成")
     end)

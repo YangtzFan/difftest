@@ -8,11 +8,11 @@ Disassembly of section .text:
    0:	00020117          	auipc	sp,0x20
    4:	00010113          	addi	sp,sp,0 # 20000 <__stack_top>
    8:	00000517          	auipc	a0,0x0
-   c:	0dc50513          	addi	a0,a0,220 # e4 <__data_load_start>
+   c:	1bc50513          	addi	a0,a0,444 # 1c4 <__rodata_load_start>
   10:	00010597          	auipc	a1,0x10
-  14:	ff058593          	addi	a1,a1,-16 # 10000 <result_direct>
+  14:	ff058593          	addi	a1,a1,-16 # 10000 <OPS>
   18:	00010617          	auipc	a2,0x10
-  1c:	fe860613          	addi	a2,a2,-24 # 10000 <result_direct>
+  1c:	ff860613          	addi	a2,a2,-8 # 10010 <result_direct>
   20:	00c5fc63          	bgeu	a1,a2,38 <_start+0x38>
   24:	00052283          	lw	t0,0(a0)
   28:	0055a023          	sw	t0,0(a1)
@@ -20,11 +20,11 @@ Disassembly of section .text:
   30:	00458593          	addi	a1,a1,4
   34:	fedff06f          	jal	zero,20 <_start+0x20>
   38:	00000517          	auipc	a0,0x0
-  3c:	0ac50513          	addi	a0,a0,172 # e4 <__data_load_start>
+  3c:	19c50513          	addi	a0,a0,412 # 1d4 <__data_load_start>
   40:	00010597          	auipc	a1,0x10
-  44:	fc058593          	addi	a1,a1,-64 # 10000 <result_direct>
+  44:	fd058593          	addi	a1,a1,-48 # 10010 <result_direct>
   48:	00010617          	auipc	a2,0x10
-  4c:	fb860613          	addi	a2,a2,-72 # 10000 <result_direct>
+  4c:	fc860613          	addi	a2,a2,-56 # 10010 <result_direct>
   50:	00c5fc63          	bgeu	a1,a2,68 <_start+0x68>
   54:	00052283          	lw	t0,0(a0)
   58:	0055a023          	sw	t0,0(a1)
@@ -32,41 +32,103 @@ Disassembly of section .text:
   60:	00458593          	addi	a1,a1,4
   64:	fedff06f          	jal	zero,50 <_start+0x50>
   68:	00010517          	auipc	a0,0x10
-  6c:	f9850513          	addi	a0,a0,-104 # 10000 <result_direct>
+  6c:	fa850513          	addi	a0,a0,-88 # 10010 <result_direct>
   70:	00010597          	auipc	a1,0x10
-  74:	f9058593          	addi	a1,a1,-112 # 10000 <result_direct>
+  74:	fa058593          	addi	a1,a1,-96 # 10010 <result_direct>
   78:	00000613          	addi	a2,zero,0
   7c:	00b57863          	bgeu	a0,a1,8c <_start+0x8c>
   80:	00c52023          	sw	a2,0(a0)
   84:	00450513          	addi	a0,a0,4
   88:	ff5ff06f          	jal	zero,7c <_start+0x7c>
   8c:	00000097          	auipc	ra,0x0
-  90:	028080e7          	jalr	ra,40(ra) # b4 <main>
+  90:	0f8080e7          	jalr	ra,248(ra) # 184 <main>
   94:	00000073          	ecall
   98:	00100073          	ebreak
 
-0000009c <run_direct.constprop.0>:
-  9c:	00b00513          	addi	a0,zero,11
+0000009c <op_add>:
+  9c:	00b50533          	add	a0,a0,a1
   a0:	00008067          	jalr	zero,0(ra)
 
-000000a4 <op_add.constprop.0>:
-  a4:	00008067          	jalr	zero,0(ra)
+000000a4 <op_sub>:
+  a4:	40b50533          	sub	a0,a0,a1
+  a8:	00008067          	jalr	zero,0(ra)
 
-000000a8 <run_indirect.constprop.0>:
-  a8:	00b00513          	addi	a0,zero,11
-  ac:	00000317          	auipc	t1,0x0
-  b0:	ff830067          	jalr	zero,-8(t1) # a4 <op_add.constprop.0>
+000000ac <op_xor>:
+  ac:	00b54533          	xor	a0,a0,a1
+  b0:	00008067          	jalr	zero,0(ra)
 
-000000b4 <main>:
-  b4:	ff010113          	addi	sp,sp,-16
-  b8:	00112623          	sw	ra,12(sp)
-  bc:	00000097          	auipc	ra,0x0
-  c0:	fec080e7          	jalr	ra,-20(ra) # a8 <run_indirect.constprop.0>
-  c4:	000107b7          	lui	a5,0x10
-  c8:	00b00713          	addi	a4,zero,11
-  cc:	00e7a023          	sw	a4,0(a5) # 10000 <result_direct>
-  d0:	0007a283          	lw	t0,0(a5)
-  d4:	00c12083          	lw	ra,12(sp)
-  d8:	00000513          	addi	a0,zero,0
-  dc:	01010113          	addi	sp,sp,16
-  e0:	00008067          	jalr	zero,0(ra)
+000000b4 <op_or>:
+  b4:	00b56533          	or	a0,a0,a1
+  b8:	00008067          	jalr	zero,0(ra)
+
+000000bc <run_direct.constprop.0>:
+  bc:	00b00513          	addi	a0,zero,11
+  c0:	00000793          	addi	a5,zero,0
+  c4:	00100693          	addi	a3,zero,1
+  c8:	40000593          	addi	a1,zero,1024
+  cc:	00200613          	addi	a2,zero,2
+  d0:	0037f713          	andi	a4,a5,3
+  d4:	00d70e63          	beq	a4,a3,f0 <run_direct.constprop.0+0x34>
+  d8:	02c70863          	beq	a4,a2,108 <run_direct.constprop.0+0x4c>
+  dc:	02071263          	bne	a4,zero,100 <run_direct.constprop.0+0x44>
+  e0:	00f50533          	add	a0,a0,a5
+  e4:	00178793          	addi	a5,a5,1
+  e8:	0037f713          	andi	a4,a5,3
+  ec:	fed716e3          	bne	a4,a3,d8 <run_direct.constprop.0+0x1c>
+  f0:	40f50533          	sub	a0,a0,a5
+  f4:	00178793          	addi	a5,a5,1
+  f8:	fcb79ce3          	bne	a5,a1,d0 <run_direct.constprop.0+0x14>
+  fc:	00008067          	jalr	zero,0(ra)
+ 100:	00f56533          	or	a0,a0,a5
+ 104:	ff1ff06f          	jal	zero,f4 <run_direct.constprop.0+0x38>
+ 108:	00f54533          	xor	a0,a0,a5
+ 10c:	fe9ff06f          	jal	zero,f4 <run_direct.constprop.0+0x38>
+
+00000110 <run_indirect.constprop.0>:
+ 110:	ff010113          	addi	sp,sp,-16
+ 114:	00912223          	sw	s1,4(sp)
+ 118:	000007b7          	lui	a5,0x0
+ 11c:	000104b7          	lui	s1,0x10
+ 120:	00812423          	sw	s0,8(sp)
+ 124:	01212023          	sw	s2,0(sp)
+ 128:	00112623          	sw	ra,12(sp)
+ 12c:	09c78613          	addi	a2,a5,156 # 9c <op_add>
+ 130:	00048493          	addi	s1,s1,0 # 10000 <OPS>
+ 134:	00b00713          	addi	a4,zero,11
+ 138:	00000413          	addi	s0,zero,0
+ 13c:	40000913          	addi	s2,zero,1024
+ 140:	0080006f          	jal	zero,148 <run_indirect.constprop.0+0x38>
+ 144:	0003a603          	lw	a2,0(t2)
+ 148:	00070513          	addi	a0,a4,0
+ 14c:	00040593          	addi	a1,s0,0
+ 150:	000600e7          	jalr	ra,0(a2)
+ 154:	00140413          	addi	s0,s0,1
+ 158:	00347293          	andi	t0,s0,3
+ 15c:	00229313          	slli	t1,t0,0x2
+ 160:	006483b3          	add	t2,s1,t1
+ 164:	00050713          	addi	a4,a0,0
+ 168:	fd241ee3          	bne	s0,s2,144 <run_indirect.constprop.0+0x34>
+ 16c:	00c12083          	lw	ra,12(sp)
+ 170:	00812403          	lw	s0,8(sp)
+ 174:	00412483          	lw	s1,4(sp)
+ 178:	00012903          	lw	s2,0(sp)
+ 17c:	01010113          	addi	sp,sp,16
+ 180:	00008067          	jalr	zero,0(ra)
+
+00000184 <main>:
+ 184:	ff010113          	addi	sp,sp,-16
+ 188:	00112623          	sw	ra,12(sp)
+ 18c:	00812423          	sw	s0,8(sp)
+ 190:	00000097          	auipc	ra,0x0
+ 194:	f80080e7          	jalr	ra,-128(ra) # 110 <run_indirect.constprop.0>
+ 198:	00050413          	addi	s0,a0,0
+ 19c:	00000097          	auipc	ra,0x0
+ 1a0:	f20080e7          	jalr	ra,-224(ra) # bc <run_direct.constprop.0>
+ 1a4:	000107b7          	lui	a5,0x10
+ 1a8:	00a7a823          	sw	a0,16(a5) # 10010 <result_direct>
+ 1ac:	0107a283          	lw	t0,16(a5)
+ 1b0:	00c12083          	lw	ra,12(sp)
+ 1b4:	00812403          	lw	s0,8(sp)
+ 1b8:	00000513          	addi	a0,zero,0
+ 1bc:	01010113          	addi	sp,sp,16
+ 1c0:	00008067          	jalr	zero,0(ra)

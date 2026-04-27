@@ -222,7 +222,17 @@ function emu:_init(tc_name, options)
     self.imem = file:read("*a") -- 指令内存：从二进制文件加载全部内容
     self.imem_size = #self.imem -- 指令内存的大小
     file:close()
-    self.dmem = {} -- 数据内存：稀疏表，未写入的地址默认返回 0
+    -- 数据内存：稀疏表，未写入的地址默认返回 0
+    -- v18 修复（TD-INDIR-A）：把 .bin 字节同步铺到 dmem，使 .rodata / .data 段的数据 load 命中
+    -- 背景：原实现 imem 与 dmem 物理分离，imem 装 .bin 而 dmem 启动空表，
+    --       导致 -O0 编译产物中位于 .rodata 的函数指针表等只读数据被 lw 读出 0，
+    --       indirect call 跳到 PC=0 进入架构性活循环（kernels_indirect_call_debug 超时根因）。
+    -- 语义：与 RV32I 平坦内存模型一致，指令与数据共享同一段物理映像；
+    --       超出 .bin 长度的地址仍回落到 raw_read 的 "or 0" 路径，行为不变。
+    self.dmem = {}
+    for i = 1, self.imem_size do
+        self.dmem[i - 1] = self.imem:byte(i)
+    end
     self.commit = 0 -- 当前时钟周期计数
 
     print(f("[EMU] 模拟器初始化完成，加载测试用例: %s (%d 字节)", tc_name, self.imem_size))
