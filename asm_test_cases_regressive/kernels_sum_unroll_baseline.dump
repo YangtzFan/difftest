@@ -1,0 +1,117 @@
+
+build/kernels/sum_unroll/baseline/kernels_sum_unroll_baseline.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	00020117          	auipc	sp,0x20
+   4:	00010113          	addi	sp,sp,0 # 20000 <__stack_top>
+   8:	00000517          	auipc	a0,0x0
+   c:	19050513          	addi	a0,a0,400 # 198 <__data_load_start>
+  10:	00010597          	auipc	a1,0x10
+  14:	ff058593          	addi	a1,a1,-16 # 10000 <data>
+  18:	00010617          	auipc	a2,0x10
+  1c:	fe860613          	addi	a2,a2,-24 # 10000 <data>
+  20:	00c5fc63          	bgeu	a1,a2,38 <_start+0x38>
+  24:	00052283          	lw	t0,0(a0)
+  28:	0055a023          	sw	t0,0(a1)
+  2c:	00450513          	addi	a0,a0,4
+  30:	00458593          	addi	a1,a1,4
+  34:	fedff06f          	jal	zero,20 <_start+0x20>
+  38:	00000517          	auipc	a0,0x0
+  3c:	16050513          	addi	a0,a0,352 # 198 <__data_load_start>
+  40:	00010597          	auipc	a1,0x10
+  44:	fc058593          	addi	a1,a1,-64 # 10000 <data>
+  48:	00010617          	auipc	a2,0x10
+  4c:	fb860613          	addi	a2,a2,-72 # 10000 <data>
+  50:	00c5fc63          	bgeu	a1,a2,68 <_start+0x68>
+  54:	00052283          	lw	t0,0(a0)
+  58:	0055a023          	sw	t0,0(a1)
+  5c:	00450513          	addi	a0,a0,4
+  60:	00458593          	addi	a1,a1,4
+  64:	fedff06f          	jal	zero,50 <_start+0x50>
+  68:	00010517          	auipc	a0,0x10
+  6c:	f9850513          	addi	a0,a0,-104 # 10000 <data>
+  70:	00010597          	auipc	a1,0x10
+  74:	39058593          	addi	a1,a1,912 # 10400 <sum4_signature>
+  78:	00000613          	addi	a2,zero,0
+  7c:	00b57863          	bgeu	a0,a1,8c <_start+0x8c>
+  80:	00c52023          	sw	a2,0(a0)
+  84:	00450513          	addi	a0,a0,4
+  88:	ff5ff06f          	jal	zero,7c <_start+0x7c>
+  8c:	00000097          	auipc	ra,0x0
+  90:	0d0080e7          	jalr	ra,208(ra) # 15c <main>
+  94:	00000073          	ecall
+  98:	00100073          	ebreak
+
+0000009c <sum_quad.constprop.0>:
+  9c:	000107b7          	lui	a5,0x10
+  a0:	00078793          	addi	a5,a5,0 # 10000 <data>
+  a4:	40078e13          	addi	t3,a5,1024
+  a8:	00000513          	addi	a0,zero,0
+  ac:	00000693          	addi	a3,zero,0
+  b0:	00000613          	addi	a2,zero,0
+  b4:	00000713          	addi	a4,zero,0
+  b8:	0007a303          	lw	t1,0(a5)
+  bc:	0047a883          	lw	a7,4(a5)
+  c0:	0087a803          	lw	a6,8(a5)
+  c4:	00c7a583          	lw	a1,12(a5)
+  c8:	01078793          	addi	a5,a5,16
+  cc:	00670733          	add	a4,a4,t1
+  d0:	01160633          	add	a2,a2,a7
+  d4:	010686b3          	add	a3,a3,a6
+  d8:	00b50533          	add	a0,a0,a1
+  dc:	fcfe1ee3          	bne	t3,a5,b8 <sum_quad.constprop.0+0x1c>
+  e0:	00c70733          	add	a4,a4,a2
+  e4:	00d70733          	add	a4,a4,a3
+  e8:	00a70533          	add	a0,a4,a0
+  ec:	00008067          	jalr	zero,0(ra)
+
+000000f0 <sum_single.constprop.0>:
+  f0:	000107b7          	lui	a5,0x10
+  f4:	00078793          	addi	a5,a5,0 # 10000 <data>
+  f8:	40078693          	addi	a3,a5,1024
+  fc:	00000513          	addi	a0,zero,0
+ 100:	0007a703          	lw	a4,0(a5)
+ 104:	00478793          	addi	a5,a5,4
+ 108:	00e50533          	add	a0,a0,a4
+ 10c:	fed79ae3          	bne	a5,a3,100 <sum_single.constprop.0+0x10>
+ 110:	00008067          	jalr	zero,0(ra)
+
+00000114 <fill_data.constprop.0>:
+ 114:	000106b7          	lui	a3,0x10
+ 118:	00068693          	addi	a3,a3,0 # 10000 <data>
+ 11c:	80000637          	lui	a2,0x80000
+ 120:	00c10737          	lui	a4,0xc10
+ 124:	40068593          	addi	a1,a3,1024
+ 128:	fee70713          	addi	a4,a4,-18 # c0ffee <__stack_top+0xbeffee>
+ 12c:	fff60613          	addi	a2,a2,-1 # 7fffffff <__stack_top+0x7ffdffff>
+ 130:	00d71793          	slli	a5,a4,0xd
+ 134:	00e7c7b3          	xor	a5,a5,a4
+ 138:	0117d713          	srli	a4,a5,0x11
+ 13c:	00e7c7b3          	xor	a5,a5,a4
+ 140:	00579713          	slli	a4,a5,0x5
+ 144:	00e7c733          	xor	a4,a5,a4
+ 148:	00c777b3          	and	a5,a4,a2
+ 14c:	00f6a023          	sw	a5,0(a3)
+ 150:	00468693          	addi	a3,a3,4
+ 154:	fcd59ee3          	bne	a1,a3,130 <fill_data.constprop.0+0x1c>
+ 158:	00008067          	jalr	zero,0(ra)
+
+0000015c <main>:
+ 15c:	ff010113          	addi	sp,sp,-16
+ 160:	00112623          	sw	ra,12(sp)
+ 164:	00000097          	auipc	ra,0x0
+ 168:	fb0080e7          	jalr	ra,-80(ra) # 114 <fill_data.constprop.0>
+ 16c:	00000097          	auipc	ra,0x0
+ 170:	f84080e7          	jalr	ra,-124(ra) # f0 <sum_single.constprop.0>
+ 174:	000107b7          	lui	a5,0x10
+ 178:	40a7a223          	sw	a0,1028(a5) # 10404 <sum1_signature>
+ 17c:	00000097          	auipc	ra,0x0
+ 180:	f20080e7          	jalr	ra,-224(ra) # 9c <sum_quad.constprop.0>
+ 184:	00c12083          	lw	ra,12(sp)
+ 188:	000107b7          	lui	a5,0x10
+ 18c:	40a7a023          	sw	a0,1024(a5) # 10400 <sum4_signature>
+ 190:	01010113          	addi	sp,sp,16
+ 194:	00008067          	jalr	zero,0(ra)

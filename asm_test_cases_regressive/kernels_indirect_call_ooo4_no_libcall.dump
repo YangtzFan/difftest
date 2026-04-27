@@ -1,0 +1,72 @@
+
+build/kernels/indirect_call/ooo4_no_libcall/kernels_indirect_call_ooo4_no_libcall.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	00020117          	auipc	sp,0x20
+   4:	00010113          	addi	sp,sp,0 # 20000 <__stack_top>
+   8:	00000517          	auipc	a0,0x0
+   c:	0dc50513          	addi	a0,a0,220 # e4 <__data_load_start>
+  10:	00010597          	auipc	a1,0x10
+  14:	ff058593          	addi	a1,a1,-16 # 10000 <result_direct>
+  18:	00010617          	auipc	a2,0x10
+  1c:	fe860613          	addi	a2,a2,-24 # 10000 <result_direct>
+  20:	00c5fc63          	bgeu	a1,a2,38 <_start+0x38>
+  24:	00052283          	lw	t0,0(a0)
+  28:	0055a023          	sw	t0,0(a1)
+  2c:	00450513          	addi	a0,a0,4
+  30:	00458593          	addi	a1,a1,4
+  34:	fedff06f          	jal	zero,20 <_start+0x20>
+  38:	00000517          	auipc	a0,0x0
+  3c:	0ac50513          	addi	a0,a0,172 # e4 <__data_load_start>
+  40:	00010597          	auipc	a1,0x10
+  44:	fc058593          	addi	a1,a1,-64 # 10000 <result_direct>
+  48:	00010617          	auipc	a2,0x10
+  4c:	fb860613          	addi	a2,a2,-72 # 10000 <result_direct>
+  50:	00c5fc63          	bgeu	a1,a2,68 <_start+0x68>
+  54:	00052283          	lw	t0,0(a0)
+  58:	0055a023          	sw	t0,0(a1)
+  5c:	00450513          	addi	a0,a0,4
+  60:	00458593          	addi	a1,a1,4
+  64:	fedff06f          	jal	zero,50 <_start+0x50>
+  68:	00010517          	auipc	a0,0x10
+  6c:	f9850513          	addi	a0,a0,-104 # 10000 <result_direct>
+  70:	00010597          	auipc	a1,0x10
+  74:	f9058593          	addi	a1,a1,-112 # 10000 <result_direct>
+  78:	00000613          	addi	a2,zero,0
+  7c:	00b57863          	bgeu	a0,a1,8c <_start+0x8c>
+  80:	00c52023          	sw	a2,0(a0)
+  84:	00450513          	addi	a0,a0,4
+  88:	ff5ff06f          	jal	zero,7c <_start+0x7c>
+  8c:	00000097          	auipc	ra,0x0
+  90:	028080e7          	jalr	ra,40(ra) # b4 <main>
+  94:	00000073          	ecall
+  98:	00100073          	ebreak
+
+0000009c <run_direct.constprop.0>:
+  9c:	00b00513          	addi	a0,zero,11
+  a0:	00008067          	jalr	zero,0(ra)
+
+000000a4 <op_add.constprop.0>:
+  a4:	00008067          	jalr	zero,0(ra)
+
+000000a8 <run_indirect.constprop.0>:
+  a8:	00b00513          	addi	a0,zero,11
+  ac:	00000317          	auipc	t1,0x0
+  b0:	ff830067          	jalr	zero,-8(t1) # a4 <op_add.constprop.0>
+
+000000b4 <main>:
+  b4:	ff010113          	addi	sp,sp,-16
+  b8:	00112623          	sw	ra,12(sp)
+  bc:	00000097          	auipc	ra,0x0
+  c0:	fec080e7          	jalr	ra,-20(ra) # a8 <run_indirect.constprop.0>
+  c4:	000107b7          	lui	a5,0x10
+  c8:	00b00713          	addi	a4,zero,11
+  cc:	00e7a023          	sw	a4,0(a5) # 10000 <result_direct>
+  d0:	0007a283          	lw	t0,0(a5)
+  d4:	00c12083          	lw	ra,12(sp)
+  d8:	00000513          	addi	a0,zero,0
+  dc:	01010113          	addi	sp,sp,16
+  e0:	00008067          	jalr	zero,0(ra)

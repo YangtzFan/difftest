@@ -1,0 +1,149 @@
+
+build/kernels/aos_vs_soa/ooo4/kernels_aos_vs_soa_ooo4.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	00020117          	auipc	sp,0x20
+   4:	00010113          	addi	sp,sp,0 # 20000 <__stack_top>
+   8:	00000517          	auipc	a0,0x0
+   c:	21050513          	addi	a0,a0,528 # 218 <__data_load_start>
+  10:	00010597          	auipc	a1,0x10
+  14:	ff058593          	addi	a1,a1,-16 # 10000 <soa_w>
+  18:	00010617          	auipc	a2,0x10
+  1c:	fe860613          	addi	a2,a2,-24 # 10000 <soa_w>
+  20:	00c5fc63          	bgeu	a1,a2,38 <_start+0x38>
+  24:	00052283          	lw	t0,0(a0)
+  28:	0055a023          	sw	t0,0(a1)
+  2c:	00450513          	addi	a0,a0,4
+  30:	00458593          	addi	a1,a1,4
+  34:	fedff06f          	jal	zero,20 <_start+0x20>
+  38:	00000517          	auipc	a0,0x0
+  3c:	1e050513          	addi	a0,a0,480 # 218 <__data_load_start>
+  40:	00010597          	auipc	a1,0x10
+  44:	fc058593          	addi	a1,a1,-64 # 10000 <soa_w>
+  48:	00010617          	auipc	a2,0x10
+  4c:	fb860613          	addi	a2,a2,-72 # 10000 <soa_w>
+  50:	00c5fc63          	bgeu	a1,a2,68 <_start+0x68>
+  54:	00052283          	lw	t0,0(a0)
+  58:	0055a023          	sw	t0,0(a1)
+  5c:	00450513          	addi	a0,a0,4
+  60:	00458593          	addi	a1,a1,4
+  64:	fedff06f          	jal	zero,50 <_start+0x50>
+  68:	00010517          	auipc	a0,0x10
+  6c:	f9850513          	addi	a0,a0,-104 # 10000 <soa_w>
+  70:	00012597          	auipc	a1,0x12
+  74:	f9058593          	addi	a1,a1,-112 # 12000 <soa_sum>
+  78:	00000613          	addi	a2,zero,0
+  7c:	00b57863          	bgeu	a0,a1,8c <_start+0x8c>
+  80:	00c52023          	sw	a2,0(a0)
+  84:	00450513          	addi	a0,a0,4
+  88:	ff5ff06f          	jal	zero,7c <_start+0x7c>
+  8c:	00000097          	auipc	ra,0x0
+  90:	144080e7          	jalr	ra,324(ra) # 1d0 <main>
+  94:	00000073          	ecall
+  98:	00100073          	ebreak
+
+0000009c <init_buffers>:
+  9c:	00011737          	lui	a4,0x11
+  a0:	00011837          	lui	a6,0x11
+  a4:	00011537          	lui	a0,0x11
+  a8:	000105b7          	lui	a1,0x10
+  ac:	00010637          	lui	a2,0x10
+  b0:	00070e93          	addi	t4,a4,0 # 11000 <aos_buf>
+  b4:	c0080293          	addi	t0,a6,-1024 # 10c00 <soa_x>
+  b8:	80050393          	addi	t2,a0,-2048 # 10800 <soa_y>
+  bc:	40058f13          	addi	t5,a1,1024 # 10400 <soa_z>
+  c0:	00060f93          	addi	t6,a2,0 # 10000 <soa_w>
+  c4:	00000793          	addi	a5,zero,0
+  c8:	10000e13          	addi	t3,zero,256
+  cc:	00078693          	addi	a3,a5,0
+  d0:	00278313          	addi	t1,a5,2
+  d4:	00fea023          	sw	a5,0(t4)
+  d8:	00368893          	addi	a7,a3,3
+  dc:	00178793          	addi	a5,a5,1
+  e0:	00d2a023          	sw	a3,0(t0)
+  e4:	00fea223          	sw	a5,4(t4)
+  e8:	00f3a023          	sw	a5,0(t2)
+  ec:	006ea423          	sw	t1,8(t4)
+  f0:	006f2023          	sw	t1,0(t5)
+  f4:	011ea623          	sw	a7,12(t4)
+  f8:	011fa023          	sw	a7,0(t6)
+  fc:	00428293          	addi	t0,t0,4
+ 100:	00438393          	addi	t2,t2,4
+ 104:	010e8e93          	addi	t4,t4,16
+ 108:	004f0f13          	addi	t5,t5,4
+ 10c:	004f8f93          	addi	t6,t6,4
+ 110:	fbc79ee3          	bne	a5,t3,cc <init_buffers+0x30>
+ 114:	00008067          	jalr	zero,0(ra)
+
+00000118 <reduce_aos>:
+ 118:	00011737          	lui	a4,0x11
+ 11c:	00070e13          	addi	t3,a4,0 # 11000 <aos_buf>
+ 120:	00001837          	lui	a6,0x1
+ 124:	010e02b3          	add	t0,t3,a6
+ 128:	00000513          	addi	a0,zero,0
+ 12c:	000e2783          	lw	a5,0(t3)
+ 130:	004e2583          	lw	a1,4(t3)
+ 134:	008e2603          	lw	a2,8(t3)
+ 138:	00ce2683          	lw	a3,12(t3)
+ 13c:	00b78333          	add	t1,a5,a1
+ 140:	00c303b3          	add	t2,t1,a2
+ 144:	00d388b3          	add	a7,t2,a3
+ 148:	010e0e13          	addi	t3,t3,16
+ 14c:	01150533          	add	a0,a0,a7
+ 150:	fdc29ee3          	bne	t0,t3,12c <reduce_aos+0x14>
+ 154:	00008067          	jalr	zero,0(ra)
+
+00000158 <reduce_soa>:
+ 158:	000117b7          	lui	a5,0x11
+ 15c:	c0078293          	addi	t0,a5,-1024 # 10c00 <soa_x>
+ 160:	00011637          	lui	a2,0x11
+ 164:	000106b7          	lui	a3,0x10
+ 168:	00010737          	lui	a4,0x10
+ 16c:	80060393          	addi	t2,a2,-2048 # 10800 <soa_y>
+ 170:	40028f93          	addi	t6,t0,1024
+ 174:	40068793          	addi	a5,a3,1024 # 10400 <soa_z>
+ 178:	00070613          	addi	a2,a4,0 # 10000 <soa_w>
+ 17c:	00000513          	addi	a0,zero,0
+ 180:	00000813          	addi	a6,zero,0
+ 184:	00000893          	addi	a7,zero,0
+ 188:	00000593          	addi	a1,zero,0
+ 18c:	0002af03          	lw	t5,0(t0)
+ 190:	0003ae83          	lw	t4,0(t2)
+ 194:	0007ae03          	lw	t3,0(a5)
+ 198:	00062303          	lw	t1,0(a2)
+ 19c:	00428293          	addi	t0,t0,4
+ 1a0:	01e585b3          	add	a1,a1,t5
+ 1a4:	01d888b3          	add	a7,a7,t4
+ 1a8:	00438393          	addi	t2,t2,4
+ 1ac:	01c80833          	add	a6,a6,t3
+ 1b0:	00478793          	addi	a5,a5,4
+ 1b4:	00650533          	add	a0,a0,t1
+ 1b8:	00460613          	addi	a2,a2,4
+ 1bc:	fdf298e3          	bne	t0,t6,18c <reduce_soa+0x34>
+ 1c0:	011586b3          	add	a3,a1,a7
+ 1c4:	01068733          	add	a4,a3,a6
+ 1c8:	00a70533          	add	a0,a4,a0
+ 1cc:	00008067          	jalr	zero,0(ra)
+
+000001d0 <main>:
+ 1d0:	ff010113          	addi	sp,sp,-16
+ 1d4:	00112623          	sw	ra,12(sp)
+ 1d8:	00812423          	sw	s0,8(sp)
+ 1dc:	00000097          	auipc	ra,0x0
+ 1e0:	ec0080e7          	jalr	ra,-320(ra) # 9c <init_buffers>
+ 1e4:	00000097          	auipc	ra,0x0
+ 1e8:	f34080e7          	jalr	ra,-204(ra) # 118 <reduce_aos>
+ 1ec:	00050413          	addi	s0,a0,0
+ 1f0:	00000097          	auipc	ra,0x0
+ 1f4:	f68080e7          	jalr	ra,-152(ra) # 158 <reduce_soa>
+ 1f8:	000127b7          	lui	a5,0x12
+ 1fc:	00a7a023          	sw	a0,0(a5) # 12000 <soa_sum>
+ 200:	0007a283          	lw	t0,0(a5)
+ 204:	00c12083          	lw	ra,12(sp)
+ 208:	00812403          	lw	s0,8(sp)
+ 20c:	00000513          	addi	a0,zero,0
+ 210:	01010113          	addi	sp,sp,16
+ 214:	00008067          	jalr	zero,0(ra)

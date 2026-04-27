@@ -1,0 +1,102 @@
+
+build/kernels/memcpy_like/baseline/kernels_memcpy_like_baseline.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	00020117          	auipc	sp,0x20
+   4:	00010113          	addi	sp,sp,0 # 20000 <__stack_top>
+   8:	00000517          	auipc	a0,0x0
+   c:	15450513          	addi	a0,a0,340 # 15c <__data_load_start>
+  10:	00010597          	auipc	a1,0x10
+  14:	ff058593          	addi	a1,a1,-16 # 10000 <dst>
+  18:	00010617          	auipc	a2,0x10
+  1c:	fe860613          	addi	a2,a2,-24 # 10000 <dst>
+  20:	00c5fc63          	bgeu	a1,a2,38 <_start+0x38>
+  24:	00052283          	lw	t0,0(a0)
+  28:	0055a023          	sw	t0,0(a1)
+  2c:	00450513          	addi	a0,a0,4
+  30:	00458593          	addi	a1,a1,4
+  34:	fedff06f          	jal	zero,20 <_start+0x20>
+  38:	00000517          	auipc	a0,0x0
+  3c:	12450513          	addi	a0,a0,292 # 15c <__data_load_start>
+  40:	00010597          	auipc	a1,0x10
+  44:	fc058593          	addi	a1,a1,-64 # 10000 <dst>
+  48:	00010617          	auipc	a2,0x10
+  4c:	fb860613          	addi	a2,a2,-72 # 10000 <dst>
+  50:	00c5fc63          	bgeu	a1,a2,68 <_start+0x68>
+  54:	00052283          	lw	t0,0(a0)
+  58:	0055a023          	sw	t0,0(a1)
+  5c:	00450513          	addi	a0,a0,4
+  60:	00458593          	addi	a1,a1,4
+  64:	fedff06f          	jal	zero,50 <_start+0x50>
+  68:	00010517          	auipc	a0,0x10
+  6c:	f9850513          	addi	a0,a0,-104 # 10000 <dst>
+  70:	00010597          	auipc	a1,0x10
+  74:	79058593          	addi	a1,a1,1936 # 10800 <copy_signature>
+  78:	00000613          	addi	a2,zero,0
+  7c:	00b57863          	bgeu	a0,a1,8c <_start+0x8c>
+  80:	00c52023          	sw	a2,0(a0)
+  84:	00450513          	addi	a0,a0,4
+  88:	ff5ff06f          	jal	zero,7c <_start+0x7c>
+  8c:	00000097          	auipc	ra,0x0
+  90:	09c080e7          	jalr	ra,156(ra) # 128 <main>
+  94:	00000073          	ecall
+  98:	00100073          	ebreak
+
+0000009c <checksum.constprop.0>:
+  9c:	000107b7          	lui	a5,0x10
+  a0:	00078793          	addi	a5,a5,0 # 10000 <dst>
+  a4:	44078693          	addi	a3,a5,1088
+  a8:	00000513          	addi	a0,zero,0
+  ac:	0007a703          	lw	a4,0(a5)
+  b0:	04478793          	addi	a5,a5,68
+  b4:	00e50533          	add	a0,a0,a4
+  b8:	fed79ae3          	bne	a5,a3,ac <checksum.constprop.0+0x10>
+  bc:	00008067          	jalr	zero,0(ra)
+
+000000c0 <copy_loop.constprop.0>:
+  c0:	000107b7          	lui	a5,0x10
+  c4:	40078793          	addi	a5,a5,1024 # 10400 <src>
+  c8:	00010737          	lui	a4,0x10
+  cc:	40078613          	addi	a2,a5,1024
+  d0:	00070713          	addi	a4,a4,0 # 10000 <dst>
+  d4:	0007a683          	lw	a3,0(a5)
+  d8:	00478793          	addi	a5,a5,4
+  dc:	00470713          	addi	a4,a4,4
+  e0:	fed72e23          	sw	a3,-4(a4)
+  e4:	fec798e3          	bne	a5,a2,d4 <copy_loop.constprop.0+0x14>
+  e8:	00008067          	jalr	zero,0(ra)
+
+000000ec <fill_src.constprop.0>:
+  ec:	000106b7          	lui	a3,0x10
+  f0:	40068693          	addi	a3,a3,1024 # 10400 <src>
+  f4:	12345737          	lui	a4,0x12345
+  f8:	40068613          	addi	a2,a3,1024
+  fc:	67870713          	addi	a4,a4,1656 # 12345678 <__stack_top+0x12325678>
+ 100:	00d71793          	slli	a5,a4,0xd
+ 104:	00e7c7b3          	xor	a5,a5,a4
+ 108:	0117d713          	srli	a4,a5,0x11
+ 10c:	00e7c7b3          	xor	a5,a5,a4
+ 110:	00579713          	slli	a4,a5,0x5
+ 114:	00e7c733          	xor	a4,a5,a4
+ 118:	00e6a023          	sw	a4,0(a3)
+ 11c:	00468693          	addi	a3,a3,4
+ 120:	fec690e3          	bne	a3,a2,100 <fill_src.constprop.0+0x14>
+ 124:	00008067          	jalr	zero,0(ra)
+
+00000128 <main>:
+ 128:	ff010113          	addi	sp,sp,-16
+ 12c:	00112623          	sw	ra,12(sp)
+ 130:	00000097          	auipc	ra,0x0
+ 134:	fbc080e7          	jalr	ra,-68(ra) # ec <fill_src.constprop.0>
+ 138:	00000097          	auipc	ra,0x0
+ 13c:	f88080e7          	jalr	ra,-120(ra) # c0 <copy_loop.constprop.0>
+ 140:	00000097          	auipc	ra,0x0
+ 144:	f5c080e7          	jalr	ra,-164(ra) # 9c <checksum.constprop.0>
+ 148:	00c12083          	lw	ra,12(sp)
+ 14c:	000117b7          	lui	a5,0x11
+ 150:	80a7a023          	sw	a0,-2048(a5) # 10800 <copy_signature>
+ 154:	01010113          	addi	sp,sp,16
+ 158:	00008067          	jalr	zero,0(ra)

@@ -1,0 +1,191 @@
+
+build/kernels/branch_reduce/ooo4/kernels_branch_reduce_ooo4.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	00020117          	auipc	sp,0x20
+   4:	00010113          	addi	sp,sp,0 # 20000 <__stack_top>
+   8:	00000517          	auipc	a0,0x0
+   c:	29850513          	addi	a0,a0,664 # 2a0 <__data_load_start>
+  10:	00010597          	auipc	a1,0x10
+  14:	ff058593          	addi	a1,a1,-16 # 10000 <data>
+  18:	00010617          	auipc	a2,0x10
+  1c:	fe860613          	addi	a2,a2,-24 # 10000 <data>
+  20:	00c5fc63          	bgeu	a1,a2,38 <_start+0x38>
+  24:	00052283          	lw	t0,0(a0)
+  28:	0055a023          	sw	t0,0(a1)
+  2c:	00450513          	addi	a0,a0,4
+  30:	00458593          	addi	a1,a1,4
+  34:	fedff06f          	jal	zero,20 <_start+0x20>
+  38:	00000517          	auipc	a0,0x0
+  3c:	26850513          	addi	a0,a0,616 # 2a0 <__data_load_start>
+  40:	00010597          	auipc	a1,0x10
+  44:	fc058593          	addi	a1,a1,-64 # 10000 <data>
+  48:	00010617          	auipc	a2,0x10
+  4c:	fb860613          	addi	a2,a2,-72 # 10000 <data>
+  50:	00c5fc63          	bgeu	a1,a2,68 <_start+0x68>
+  54:	00052283          	lw	t0,0(a0)
+  58:	0055a023          	sw	t0,0(a1)
+  5c:	00450513          	addi	a0,a0,4
+  60:	00458593          	addi	a1,a1,4
+  64:	fedff06f          	jal	zero,50 <_start+0x50>
+  68:	00010517          	auipc	a0,0x10
+  6c:	f9850513          	addi	a0,a0,-104 # 10000 <data>
+  70:	00010597          	auipc	a1,0x10
+  74:	39058593          	addi	a1,a1,912 # 10400 <branchless_signature>
+  78:	00000613          	addi	a2,zero,0
+  7c:	00b57863          	bgeu	a0,a1,8c <_start+0x8c>
+  80:	00c52023          	sw	a2,0(a0)
+  84:	00450513          	addi	a0,a0,4
+  88:	ff5ff06f          	jal	zero,7c <_start+0x7c>
+  8c:	00000097          	auipc	ra,0x0
+  90:	124080e7          	jalr	ra,292(ra) # 1b0 <main>
+  94:	00000073          	ecall
+  98:	00100073          	ebreak
+
+0000009c <count_branchless.constprop.0>:
+  9c:	000107b7          	lui	a5,0x10
+  a0:	00078793          	addi	a5,a5,0 # 10000 <data>
+  a4:	40078e13          	addi	t3,a5,1024
+  a8:	00000513          	addi	a0,zero,0
+  ac:	00000893          	addi	a7,zero,0
+  b0:	00000313          	addi	t1,zero,0
+  b4:	00000813          	addi	a6,zero,0
+  b8:	0007a583          	lw	a1,0(a5)
+  bc:	0047a603          	lw	a2,4(a5)
+  c0:	0087a683          	lw	a3,8(a5)
+  c4:	00c7a703          	lw	a4,12(a5)
+  c8:	02b5a293          	slti	t0,a1,43
+  cc:	02b62393          	slti	t2,a2,43
+  d0:	02b6ae93          	slti	t4,a3,43
+  d4:	02b72f13          	slti	t5,a4,43
+  d8:	0012bf93          	sltiu	t6,t0,1
+  dc:	0013b593          	sltiu	a1,t2,1
+  e0:	001eb613          	sltiu	a2,t4,1
+  e4:	001f3693          	sltiu	a3,t5,1
+  e8:	01078793          	addi	a5,a5,16
+  ec:	01f80833          	add	a6,a6,t6
+  f0:	00b30333          	add	t1,t1,a1
+  f4:	00c888b3          	add	a7,a7,a2
+  f8:	00d50533          	add	a0,a0,a3
+  fc:	fafe1ee3          	bne	t3,a5,b8 <count_branchless.constprop.0+0x1c>
+ 100:	00680e33          	add	t3,a6,t1
+ 104:	011e0733          	add	a4,t3,a7
+ 108:	00a70533          	add	a0,a4,a0
+ 10c:	00008067          	jalr	zero,0(ra)
+
+00000110 <count_branchy.constprop.0>:
+ 110:	000107b7          	lui	a5,0x10
+ 114:	00078293          	addi	t0,a5,0 # 10000 <data>
+ 118:	40028613          	addi	a2,t0,1024
+ 11c:	00000513          	addi	a0,zero,0
+ 120:	02a00693          	addi	a3,zero,42
+ 124:	0002a703          	lw	a4,0(t0)
+ 128:	00428293          	addi	t0,t0,4
+ 12c:	00e6a333          	slt	t1,a3,a4
+ 130:	00650533          	add	a0,a0,t1
+ 134:	fe5618e3          	bne	a2,t0,124 <count_branchy.constprop.0+0x14>
+ 138:	00008067          	jalr	zero,0(ra)
+
+0000013c <fill_data.constprop.0>:
+ 13c:	ff010113          	addi	sp,sp,-16
+ 140:	00912223          	sw	s1,4(sp)
+ 144:	000104b7          	lui	s1,0x10
+ 148:	00812423          	sw	s0,8(sp)
+ 14c:	00048493          	addi	s1,s1,0 # 10000 <data>
+ 150:	0badd437          	lui	s0,0xbadd
+ 154:	01212023          	sw	s2,0(sp)
+ 158:	00112623          	sw	ra,12(sp)
+ 15c:	40048913          	addi	s2,s1,1024
+ 160:	afe40413          	addi	s0,s0,-1282 # badcafe <__stack_top+0xbabcafe>
+ 164:	00d41513          	slli	a0,s0,0xd
+ 168:	008542b3          	xor	t0,a0,s0
+ 16c:	0112d793          	srli	a5,t0,0x11
+ 170:	00f2c333          	xor	t1,t0,a5
+ 174:	00531393          	slli	t2,t1,0x5
+ 178:	00734433          	xor	s0,t1,t2
+ 17c:	00040513          	addi	a0,s0,0
+ 180:	06400593          	addi	a1,zero,100
+ 184:	00000097          	auipc	ra,0x0
+ 188:	0b8080e7          	jalr	ra,184(ra) # 23c <__umodsi3>
+ 18c:	00a4a023          	sw	a0,0(s1)
+ 190:	00448493          	addi	s1,s1,4
+ 194:	fc9918e3          	bne	s2,s1,164 <fill_data.constprop.0+0x28>
+ 198:	00c12083          	lw	ra,12(sp)
+ 19c:	00812403          	lw	s0,8(sp)
+ 1a0:	00412483          	lw	s1,4(sp)
+ 1a4:	00012903          	lw	s2,0(sp)
+ 1a8:	01010113          	addi	sp,sp,16
+ 1ac:	00008067          	jalr	zero,0(ra)
+
+000001b0 <main>:
+ 1b0:	ff010113          	addi	sp,sp,-16
+ 1b4:	00112623          	sw	ra,12(sp)
+ 1b8:	00000097          	auipc	ra,0x0
+ 1bc:	f84080e7          	jalr	ra,-124(ra) # 13c <fill_data.constprop.0>
+ 1c0:	00000097          	auipc	ra,0x0
+ 1c4:	f50080e7          	jalr	ra,-176(ra) # 110 <count_branchy.constprop.0>
+ 1c8:	000107b7          	lui	a5,0x10
+ 1cc:	40a7a223          	sw	a0,1028(a5) # 10404 <branchy_signature>
+ 1d0:	00000097          	auipc	ra,0x0
+ 1d4:	ecc080e7          	jalr	ra,-308(ra) # 9c <count_branchless.constprop.0>
+ 1d8:	00c12083          	lw	ra,12(sp)
+ 1dc:	000102b7          	lui	t0,0x10
+ 1e0:	40a2a023          	sw	a0,1024(t0) # 10400 <branchless_signature>
+ 1e4:	01010113          	addi	sp,sp,16
+ 1e8:	00008067          	jalr	zero,0(ra)
+
+000001ec <__divsi3>:
+ 1ec:	06054063          	blt	a0,zero,24c <__umodsi3+0x10>
+ 1f0:	0605c663          	blt	a1,zero,25c <__umodsi3+0x20>
+
+000001f4 <__hidden___udivsi3>:
+ 1f4:	00058613          	addi	a2,a1,0
+ 1f8:	00050593          	addi	a1,a0,0
+ 1fc:	fff00513          	addi	a0,zero,-1
+ 200:	02060c63          	beq	a2,zero,238 <__hidden___udivsi3+0x44>
+ 204:	00100693          	addi	a3,zero,1
+ 208:	00b67a63          	bgeu	a2,a1,21c <__hidden___udivsi3+0x28>
+ 20c:	00c05863          	bge	zero,a2,21c <__hidden___udivsi3+0x28>
+ 210:	00161613          	slli	a2,a2,0x1
+ 214:	00169693          	slli	a3,a3,0x1
+ 218:	feb66ae3          	bltu	a2,a1,20c <__hidden___udivsi3+0x18>
+ 21c:	00000513          	addi	a0,zero,0
+ 220:	00c5e663          	bltu	a1,a2,22c <__hidden___udivsi3+0x38>
+ 224:	40c585b3          	sub	a1,a1,a2
+ 228:	00d56533          	or	a0,a0,a3
+ 22c:	0016d693          	srli	a3,a3,0x1
+ 230:	00165613          	srli	a2,a2,0x1
+ 234:	fe0696e3          	bne	a3,zero,220 <__hidden___udivsi3+0x2c>
+ 238:	00008067          	jalr	zero,0(ra)
+
+0000023c <__umodsi3>:
+ 23c:	00008293          	addi	t0,ra,0
+ 240:	fb5ff0ef          	jal	ra,1f4 <__hidden___udivsi3>
+ 244:	00058513          	addi	a0,a1,0
+ 248:	00028067          	jalr	zero,0(t0)
+ 24c:	40a00533          	sub	a0,zero,a0
+ 250:	00b04863          	blt	zero,a1,260 <__umodsi3+0x24>
+ 254:	40b005b3          	sub	a1,zero,a1
+ 258:	f9dff06f          	jal	zero,1f4 <__hidden___udivsi3>
+ 25c:	40b005b3          	sub	a1,zero,a1
+ 260:	00008293          	addi	t0,ra,0
+ 264:	f91ff0ef          	jal	ra,1f4 <__hidden___udivsi3>
+ 268:	40a00533          	sub	a0,zero,a0
+ 26c:	00028067          	jalr	zero,0(t0)
+
+00000270 <__modsi3>:
+ 270:	00008293          	addi	t0,ra,0
+ 274:	0005ca63          	blt	a1,zero,288 <__modsi3+0x18>
+ 278:	00054c63          	blt	a0,zero,290 <__modsi3+0x20>
+ 27c:	f79ff0ef          	jal	ra,1f4 <__hidden___udivsi3>
+ 280:	00058513          	addi	a0,a1,0
+ 284:	00028067          	jalr	zero,0(t0)
+ 288:	40b005b3          	sub	a1,zero,a1
+ 28c:	fe0558e3          	bge	a0,zero,27c <__modsi3+0xc>
+ 290:	40a00533          	sub	a0,zero,a0
+ 294:	f61ff0ef          	jal	ra,1f4 <__hidden___udivsi3>
+ 298:	40b00533          	sub	a0,zero,a1
+ 29c:	00028067          	jalr	zero,0(t0)

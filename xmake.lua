@@ -130,6 +130,7 @@ end)
 --   xmake run Core                # 运行默认测试用例 (and)
 --   TC=add xmake run Core         # 运行 add 测试用例
 --   DUMP=1 TC=beq xmake Core      # 运行 beq 并输出波形
+--   TIMEOUT=10 TC=foo xmake r Core # 单例运行最长 10 秒，超时强制终止
 -- ============================================================================
 target("Core", function()
     set_default(true)
@@ -193,6 +194,38 @@ target("Core", function()
         if not tc_name or tc_name == "" then 
             tc_name = "and"
             os.setenv("TC", "and")
+        end
+
+        -- ========================================================
+        -- TIMEOUT 监测：当用户通过环境变量 TIMEOUT 指定单例最长执行时间时，
+        -- 启动一个后台守护进程，超时后对当前 xmake 进程组发送 SIGTERM/SIGKILL，
+        -- 从而强制终止仿真。该机制与 sim-basic / sim-regressive 行为保持一致，
+        -- 让 `xmake r Core` 的单用例运行也能受到超时保护，避免死循环用例无限占用资源。
+        -- ========================================================
+        if timeout_sec > 0 then
+            local self_pid = os.getpid()  -- 当前 xmake 进程 PID（一般也是其进程组组长）
+            -- 通过 setsid 将守护进程脱离当前会话，使其在 xmake 退出后仍能存活；
+            -- 超时触发时，先在 stderr 上输出与 sim-basic / sim-regressive 风格一致的中文提示，
+            -- 再发 SIGTERM 优雅终止，宽限 5 秒后发 SIGKILL 兜底强杀。
+            -- 守护进程在动手前先校验目标 PID 是否仍存在 (kill -0)，避免 PID 复用误杀。
+            -- 注意：xmake 被杀后无法再调用 cprint 渲染颜色，因此守护进程直接发送 ANSI 转义码：
+            --   \033[33;4m -> 黄色 + 下划线
+            --   \033[31;4m -> 红色 + 下划线
+            --   \033[0m    -> 复位样式
+            local timeout_msg = string.format(
+                "\\033[33;4m[INFO]\\033[0m [sim-single] 耗时过长: %s | \\033[31;4m用例编写不合理！\\033[0m\\n",
+                tc_name)
+            local watchdog_cmd = string.format(
+                "( sleep %d ; if kill -0 %d 2>/dev/null ; then " ..
+                "printf '%s' >&2 ; " ..
+                "kill -TERM -%d 2>/dev/null || kill -TERM %d 2>/dev/null ; " ..
+                "sleep 5 ; kill -KILL -%d 2>/dev/null || kill -KILL %d 2>/dev/null ; fi ) " ..
+                "</dev/null &",
+                timeout_sec, self_pid, timeout_msg,
+                self_pid, self_pid, self_pid, self_pid)
+            os.execv("setsid", {"sh", "-c", watchdog_cmd})
+        else
+            cprint("${yellow underline}[WARNING]${clear} 无效的 TIMEOUT 值: '%s'，忽略", tostring(timeout_sec))
         end
 
         -- 在 test_cases_basic / test_cases_regressive 目录中依次查找 <TC>.bin
@@ -354,7 +387,7 @@ local function _make_batch_runner(label, dir)
                 label, #timeouted, #timeouted > 0 and table.concat(timeouted, ", ") or "(none)")
         end
         if #failed > 0 or #timeouted > 0 then
-            raise(string.format("%s 完成，%d 个失败，%d 个",
+            raise(string.format("%s 完成，%d 个失败，%d 个耗时过长",
                 label, #failed, #timeouted))
         end
     end

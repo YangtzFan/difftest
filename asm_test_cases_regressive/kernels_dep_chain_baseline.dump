@@ -1,0 +1,99 @@
+
+build/kernels/dep_chain/baseline/kernels_dep_chain_baseline.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	00020117          	auipc	sp,0x20
+   4:	00010113          	addi	sp,sp,0 # 20000 <__stack_top>
+   8:	00000517          	auipc	a0,0x0
+   c:	15050513          	addi	a0,a0,336 # 158 <__data_load_start>
+  10:	00010597          	auipc	a1,0x10
+  14:	ff058593          	addi	a1,a1,-16 # 10000 <result_split>
+  18:	00010617          	auipc	a2,0x10
+  1c:	fe860613          	addi	a2,a2,-24 # 10000 <result_split>
+  20:	00c5fc63          	bgeu	a1,a2,38 <_start+0x38>
+  24:	00052283          	lw	t0,0(a0)
+  28:	0055a023          	sw	t0,0(a1)
+  2c:	00450513          	addi	a0,a0,4
+  30:	00458593          	addi	a1,a1,4
+  34:	fedff06f          	jal	zero,20 <_start+0x20>
+  38:	00000517          	auipc	a0,0x0
+  3c:	12050513          	addi	a0,a0,288 # 158 <__data_load_start>
+  40:	00010597          	auipc	a1,0x10
+  44:	fc058593          	addi	a1,a1,-64 # 10000 <result_split>
+  48:	00010617          	auipc	a2,0x10
+  4c:	fb860613          	addi	a2,a2,-72 # 10000 <result_split>
+  50:	00c5fc63          	bgeu	a1,a2,68 <_start+0x68>
+  54:	00052283          	lw	t0,0(a0)
+  58:	0055a023          	sw	t0,0(a1)
+  5c:	00450513          	addi	a0,a0,4
+  60:	00458593          	addi	a1,a1,4
+  64:	fedff06f          	jal	zero,50 <_start+0x50>
+  68:	00010517          	auipc	a0,0x10
+  6c:	f9850513          	addi	a0,a0,-104 # 10000 <result_split>
+  70:	00010597          	auipc	a1,0x10
+  74:	f9058593          	addi	a1,a1,-112 # 10000 <result_split>
+  78:	00000613          	addi	a2,zero,0
+  7c:	00b57863          	bgeu	a0,a1,8c <_start+0x8c>
+  80:	00c52023          	sw	a2,0(a0)
+  84:	00450513          	addi	a0,a0,4
+  88:	ff5ff06f          	jal	zero,7c <_start+0x7c>
+  8c:	00000097          	auipc	ra,0x0
+  90:	08c080e7          	jalr	ra,140(ra) # 118 <main>
+  94:	00000073          	ecall
+  98:	00100073          	ebreak
+
+0000009c <chain_split.constprop.0>:
+  9c:	40000613          	addi	a2,zero,1024
+  a0:	00a00513          	addi	a0,zero,10
+  a4:	00900713          	addi	a4,zero,9
+  a8:	00800693          	addi	a3,zero,8
+  ac:	00700793          	addi	a5,zero,7
+  b0:	00179313          	slli	t1,a5,0x1
+  b4:	00169893          	slli	a7,a3,0x1
+  b8:	00171813          	slli	a6,a4,0x1
+  bc:	00151593          	slli	a1,a0,0x1
+  c0:	00f307b3          	add	a5,t1,a5
+  c4:	00d886b3          	add	a3,a7,a3
+  c8:	00e80733          	add	a4,a6,a4
+  cc:	00a58533          	add	a0,a1,a0
+  d0:	fff60613          	addi	a2,a2,-1
+  d4:	00178793          	addi	a5,a5,1
+  d8:	00168693          	addi	a3,a3,1
+  dc:	00170713          	addi	a4,a4,1
+  e0:	00150513          	addi	a0,a0,1
+  e4:	fc0616e3          	bne	a2,zero,b0 <chain_split.constprop.0+0x14>
+  e8:	00d7c7b3          	xor	a5,a5,a3
+  ec:	00e7c7b3          	xor	a5,a5,a4
+  f0:	00a7c533          	xor	a0,a5,a0
+  f4:	00008067          	jalr	zero,0(ra)
+
+000000f8 <chain_long.constprop.0>:
+  f8:	000017b7          	lui	a5,0x1
+  fc:	00700513          	addi	a0,zero,7
+ 100:	00151713          	slli	a4,a0,0x1
+ 104:	00a70533          	add	a0,a4,a0
+ 108:	fff78793          	addi	a5,a5,-1 # fff <__data_load_start+0xea7>
+ 10c:	00150513          	addi	a0,a0,1
+ 110:	fe0798e3          	bne	a5,zero,100 <chain_long.constprop.0+0x8>
+ 114:	00008067          	jalr	zero,0(ra)
+
+00000118 <main>:
+ 118:	ff010113          	addi	sp,sp,-16
+ 11c:	00112623          	sw	ra,12(sp)
+ 120:	00812423          	sw	s0,8(sp)
+ 124:	00000097          	auipc	ra,0x0
+ 128:	fd4080e7          	jalr	ra,-44(ra) # f8 <chain_long.constprop.0>
+ 12c:	00050413          	addi	s0,a0,0
+ 130:	00000097          	auipc	ra,0x0
+ 134:	f6c080e7          	jalr	ra,-148(ra) # 9c <chain_split.constprop.0>
+ 138:	000107b7          	lui	a5,0x10
+ 13c:	00a7a023          	sw	a0,0(a5) # 10000 <result_split>
+ 140:	0007a783          	lw	a5,0(a5)
+ 144:	00c12083          	lw	ra,12(sp)
+ 148:	00812403          	lw	s0,8(sp)
+ 14c:	00000513          	addi	a0,zero,0
+ 150:	01010113          	addi	sp,sp,16
+ 154:	00008067          	jalr	zero,0(ra)
