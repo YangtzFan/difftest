@@ -39,11 +39,11 @@ import sys
 # 各队列的实际深度 —— 与 byPass/src/main/scala/CPUConfig.scala 保持一致
 # ---------------------------------------------------------------------------
 QUEUE_DEPTHS = {
-    "fb":  16,   # FetchBuffer
-    "iq":  16,   # IssueQueue
+    "fb":  32,   # FetchBuffer
+    "iq":  48,   # IssueQueue
     "rob": 128,  # ROB
-    "sb":  32,   # StoreBuffer
-    "sq":  32,   # AXIStoreQueue
+    "sb":  16,   # StoreBuffer
+    "sq":  16,   # AXIStoreQueue
 }
 
 # 图例使用的人类友好名称
