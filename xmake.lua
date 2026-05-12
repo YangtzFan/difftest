@@ -10,13 +10,24 @@
 local prj_dir = os.curdir()
 local tc_basic_dir      = path.join(prj_dir, "test_cases_basic")      -- 基础测试用例目录
 local tc_regressive_dir = path.join(prj_dir, "test_cases_regressive") -- 回归测试用例目录
+local tc_pressure_dir   = path.join(prj_dir, "test_cases_pressure")   -- 压力测试用例目录（仅供 sim-single 使用）
 local src_dir = path.join(prj_dir, "src")                  -- Lua 源码目录
-local rtl_prj_dir = "/home/litian/Documents/stageFiles/studyplace/byPass"           -- Chisel RTL 子项目
+local rtl_prj_dir = "/nfs/home/zhanghang/Documents/byPass"           -- Chisel RTL 子项目
 local build_dir = path.join(prj_dir, "build")             -- 构建产物目录
 local rtl_dir = path.join(build_dir, "Core")              -- 生成的 RTL 目录
-local timeout_sec = tonumber(os.getenv("TIMEOUT")) or 60  -- 单个用例最长执行时间 (秒)
+-- TIMEOUT 处理：
+--   - 未设置 / 非法值 -> 默认 600 秒
+--   - 显式设置为 0    -> 禁用超时检测（用例可无限运行）
+--   - 正整数           -> 单例最长执行时间（秒）
+local timeout_sec = tonumber(os.getenv("TIMEOUT"))
+if timeout_sec == nil then timeout_sec = 600 end
+if timeout_sec <= 0 then timeout_sec = 0 end
 
 local sim = os.getenv("SIM") or "vcs"
+
+-- 仿真日志与每周期 CSV 的统一输出目录
+local sim_log_dir  = path.join(build_dir, "sim-log")
+local sim_data_dir = path.join(build_dir, "sim-data")
 
 -- IROM 的 hex 文件固定路径，用于运行时动态加载测试用例到 RTL 的 IROM
 local irom_hex = path.join(rtl_dir, "irom.hex")
@@ -145,17 +156,22 @@ target("rtl", function()
 end)
 
 -- ============================================================================
--- target: run —— 运行 Difftest 仿真
+-- target: Core —— Difftest 仿真后端入口
 -- ============================================================================
 -- 通过环境变量 TC 指定测试用例（不含 .bin 后缀），默认为 "and"
 -- 运行前自动将 .bin 转换为 .hex 并写入 IROM 固定路径
 -- 测试用例同时加载到 RTL（通过 $readmemh）和模拟器（通过 Lua IO）
--- 用法：
---   xmake build Core              # 编译验证组建
+--
+-- 用法（直接调用 Core，原生交互式输出，不落盘日志）：
+--   xmake build Core              # 编译验证组件
 --   xmake run Core                # 运行默认测试用例 (and)
 --   TC=add xmake run Core         # 运行 add 测试用例
---   DUMP=1 TC=beq xmake Core      # 运行 beq 并输出波形
---   TIMEOUT=10 TC=foo xmake r Core # 单例运行最长 10 秒，超时强制终止
+--   DUMP=1 TC=beq xmake r Core    # 运行 beq 并输出波形
+--   TIMEOUT=10 TC=foo xmake r Core # 单例最长 10 秒，超时强制终止
+--   TIMEOUT=0  TC=foo xmake r Core # 禁用超时检测，用例可无限运行
+--
+-- 推荐的单用例命令（标准化输出，自动落盘 log + CSV）：
+--   xmake run sim-single TC=<case>
 -- ============================================================================
 target("Core", function()
     set_default(true)
@@ -188,10 +204,10 @@ target("Core", function()
 
     add_values("vcs.flags", "+define+ASSERT_VERBOSE_CO0_test_for_smokeND_=1", "+define+STOP_COND_=1")
     add_values("vcs.flags",
-        "+incdir+" .. path.join(SNF_dir, "verification"),
-        "+incdir+" .. path.join(SNF_dir, "verification", "assert"),
-        "+incdir+" .. path.join(SNF_dir, "verification", "assume"),
-        "+incdir+" .. path.join(SNF_dir, "verification", "cover")
+        "+incdir+" .. path.join(rtl_dir, "verification"),
+        "+incdir+" .. path.join(rtl_dir, "verification", "assert"),
+        "+incdir+" .. path.join(rtl_dir, "verification", "assume"),
+        "+incdir+" .. path.join(rtl_dir, "verification", "cover")
     )
 
     add_values("verilator.flags", "+define+ASSERT_VERBOSE_CO0_test_for_smokeND_=1", "+define+STOP_COND_=1")
@@ -222,23 +238,22 @@ target("Core", function()
         end
 
         -- ========================================================
-        -- TIMEOUT 监测：当用户通过环境变量 TIMEOUT 指定单例最长执行时间时，
-        -- 启动一个后台守护进程，超时后对当前 xmake 进程组发送 SIGTERM/SIGKILL，
-        -- 从而强制终止仿真。该机制与 sim-basic / sim-regressive 行为保持一致，
-        -- 让 `xmake r Core` 的单用例运行也能受到超时保护，避免死循环用例无限占用资源。
+        -- TIMEOUT 监测：单例 watchdog
+        -- - timeout_sec > 0：启动后台守护进程，超时后向 xmake 进程组发送 SIGTERM/SIGKILL；
+        -- - timeout_sec == 0：禁用，用例可无限运行（用户通过 TIMEOUT=0 显式选择）；
+        -- 通过 setsid 将守护进程脱离当前会话，使其在 xmake 退出后仍能存活；
+        -- 超时触发时，先在 stderr 上输出与批量 runner 风格一致的中文提示，
+        -- 再发 SIGTERM 优雅终止，宽限 5 秒后发 SIGKILL 兜底强杀。
+        -- 守护进程在动手前先校验目标 PID 是否仍存在 (kill -0)，避免 PID 复用误杀。
+        -- 注意：xmake 被杀后无法再调用 cprint 渲染颜色，因此守护进程直接发送 ANSI 转义码：
+        --   \033[33;4m -> 黄色 + 下划线
+        --   \033[31;4m -> 红色 + 下划线
+        --   \033[0m    -> 复位样式
         -- ========================================================
         if timeout_sec > 0 then
             local self_pid = os.getpid()  -- 当前 xmake 进程 PID（一般也是其进程组组长）
-            -- 通过 setsid 将守护进程脱离当前会话，使其在 xmake 退出后仍能存活；
-            -- 超时触发时，先在 stderr 上输出与 sim-basic / sim-regressive 风格一致的中文提示，
-            -- 再发 SIGTERM 优雅终止，宽限 5 秒后发 SIGKILL 兜底强杀。
-            -- 守护进程在动手前先校验目标 PID 是否仍存在 (kill -0)，避免 PID 复用误杀。
-            -- 注意：xmake 被杀后无法再调用 cprint 渲染颜色，因此守护进程直接发送 ANSI 转义码：
-            --   \033[33;4m -> 黄色 + 下划线
-            --   \033[31;4m -> 红色 + 下划线
-            --   \033[0m    -> 复位样式
             local timeout_msg = string.format(
-                "\\033[33;4m[INFO]\\033[0m [sim-single] 耗时过长: %s | \\033[31;4m用例编写不合理！\\033[0m\\n",
+                "\\033[33;4m[INFO]\\033[0m [sim-single] 耗时过长: %s | \\033[31;4m用例编写不合理!\\033[0m\\n",
                 tc_name)
             local watchdog_cmd = string.format(
                 "( sleep %d ; if kill -0 %d 2>/dev/null ; then " ..
@@ -249,12 +264,11 @@ target("Core", function()
                 timeout_sec, self_pid, timeout_msg,
                 self_pid, self_pid, self_pid, self_pid)
             os.execv("setsid", {"sh", "-c", watchdog_cmd})
-        else
-            cprint("${yellow underline}[WARNING]${clear} 无效的 TIMEOUT 值: '%s'，忽略", tostring(timeout_sec))
         end
 
-        -- 在 test_cases_basic / test_cases_regressive 目录中依次查找 <TC>.bin
-        local search_dirs = { tc_basic_dir, tc_regressive_dir }
+        -- 在 test_cases_basic / test_cases_regressive / test_cases_pressure 三个目录中
+        -- 依次查找 <TC>.bin。压力用例只允许通过单跑接入仿真，不会被纳入 sim-basic/sim-regressive。
+        local search_dirs = { tc_basic_dir, tc_regressive_dir, tc_pressure_dir }
         local bin_file
         for _, d in ipairs(search_dirs) do
             local candidate = path.join(d, tc_name .. ".bin")
@@ -264,17 +278,16 @@ target("Core", function()
             end
         end
         if not bin_file then
-            raise(string.format("测试用例未找到: %s.bin (已搜索: %s, %s)",
-                tc_name, tc_basic_dir, tc_regressive_dir))
+            raise(string.format("测试用例未找到: %s.bin (已搜索: %s, %s, %s)",
+                tc_name, tc_basic_dir, tc_regressive_dir, tc_pressure_dir))
         end
         os.mkdir(rtl_dir)
 
         -- ========================================================
-        -- 准备仿真数据 CSV 输出路径：build/sim-data/<case>.csv
-        -- 以绝对路径通过环境变量 SIM_DATA_FILE 传给 main.lua，避免
-        -- main.lua 运行时的工作目录与项目根不一致导致路径错乱。
+        -- 准备仿真数据 CSV 输出路径：build/sim-data/<case>.csv（同名覆盖）
+        -- 以绝对路径通过环境变量 SIM_DATA_FILE 传给 main.lua，避免 main.lua
+        -- 运行时的工作目录与项目根不一致导致路径错乱。
         -- ========================================================
-        local sim_data_dir  = path.join(build_dir, "sim-data")
         os.mkdir(sim_data_dir)
         local sim_data_file = path.absolute(path.join(sim_data_dir, tc_name .. ".csv"))
         os.setenv("SIM_DATA_FILE", sim_data_file)
@@ -340,57 +353,49 @@ target("Core", function()
 end)
 
 -- ============================================================================
--- target: sim-basic / sim-regressive —— 批量运行测试用例
+-- 运行测试用例的工厂函数 _make_runner(mode, label, dir)
 -- ============================================================================
--- sim-basic       遍历 test_cases_basic/*.bin
--- sim-regressive  遍历 test_cases_regressive/*.bin
--- 判定标准：子进程 stdout 中包含 "ECALL"（表示参考模型检测到 ECALL 而正常结束）。
--- 本 target 不再落地仿真日志文件，也不再生成 summary.txt，只在终端输出简洁汇总。
--- 但每个用例的每周期占用/IPC 数据仍然由 Core 仿真自动写入 build/sim-data/<case>.csv，
--- 供 scripts/plot_sim.py 绘图使用（见 clean 目标也会清理该目录）。
+-- 返回的闭包将被赋给 on_run，由 xmake 在运行时绑定到 script-scope 沙箱，
+-- 因此可以在闭包内自由使用 os.mkdir / os.iorunv / os.time / try-catch 等 API。
+-- 内部 inline 定义 run_one：执行单个用例 + 落盘日志 + 判定通过/超时/失败，
+-- 被 sim-single 和 sim-basic/sim-regressive 三个 target 共用，避免重复代码。
+--
+-- 通过 os.iorunv 启动子 xmake 跑 Core target，捕获 stdout+stderr 写入日志：
+--   - timeout_sec > 0：用系统 `timeout` 命令包裹，超时退出码 124/137；
+--   - timeout_sec == 0：不包裹 `timeout`，子进程可无限运行；
+-- 判定通过：日志包含 "ECALL"（参考模型正常退出标志）。
+-- 落盘路径：build/sim-log/<case>.log（"w" 模式覆盖）。
+--
+-- mode = "single"  --> 运行 TC 环境变量指定的单个用例（默认 "and"）
+-- mode = "batch"   --> 遍历 dir/*.bin 批量运行
 -- ============================================================================
--- ============================================================================
--- target: sim-basic / sim-regressive —— 批量运行测试用例
--- ============================================================================
--- sim-basic       遍历 test_cases_basic/*.bin
--- sim-regressive  遍历 test_cases_regressive/*.bin
--- 判定标准：子进程 stdout 中包含 "ECALL"（表示参考模型检测到 ECALL 而正常结束）。
--- 本 target 不再落地仿真日志文件，也不再生成 summary.txt，只在终端输出简洁汇总。
--- 但每个用例的每周期占用/IPC 数据仍然由 Core 仿真自动写入 build/sim-data/<case>.csv，
--- 供 scripts/plot_sim.py 绘图使用（见 clean 目标也会清理该目录）。
--- ============================================================================
-local function _make_batch_runner(label, dir)
+local function _make_runner(mode, label, dir)
     return function()
-        -- 收集所有测试用例并排序
-        local bin_files = os.files(path.join(dir, "*.bin"))
-        table.sort(bin_files)
+        -- ---------- 内部 helper：跑单个用例 ----------
+        local function run_one(case_name)
+            os.mkdir(sim_log_dir)
+            local log_path = path.join(sim_log_dir, case_name .. ".log")
 
-        if #bin_files == 0 then
-            raise(string.format("%s 目录下未找到任何 .bin 文件", dir))
-        end
+            -- 给子 xmake 注入环境变量：TC 指定用例名，SIM 指定后端
+            os.setenv("TC", case_name)
+            os.setenv("SIM", sim)
 
-        local passed     = {}
-        local failed     = {}
-        local timeouted  = {}
-
-        cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (单例最长不超过 %ds)",
-            label, #bin_files, timeout_sec)
-
-        -- 逐个运行测试用例：用 popen 捕获 stdout 到内存，读完即丢弃
-        for _, bin_file in ipairs(bin_files) do
-            local case_name = path.basename(bin_file)  -- 不含 .bin 后缀的文件名
-
-            -- 使用系统 `timeout` 命令包裹 `xmake r Core`，超过 timeout_sec 秒发送 SIGTERM；
-            -- 5 秒宽限期后 (--kill-after=5) 仍未退出则发送 SIGKILL，保证不残留进程。
-            -- timeout 自身约定的退出码：超时被杀返回 124，被 SIGKILL 强杀返回 137。
             local log_text = ""
             local err_text = ""
             local t0 = os.time()
             try {
                 function()
-                    local stdout, stderr = os.iorunv("timeout",
-                        {"--kill-after=5", tostring(timeout_sec), "xmake", "r", "Core"},
-                        {envs = {TC = case_name}})
+                    local stdout, stderr
+                    if timeout_sec > 0 then
+                        -- 用 `timeout` 命令包裹子 xmake，超时 SIGTERM；
+                        -- --kill-after=5 表示 5 秒宽限期后仍未退出则 SIGKILL。
+                        -- timeout 自身约定：被 SIGTERM 杀返回 124，被 SIGKILL 杀返回 137。
+                        stdout, stderr = os.iorunv("timeout",
+                            {"--kill-after=5", tostring(timeout_sec), "xmake", "r", "Core"})
+                    else
+                        -- TIMEOUT=0：禁用外部超时，子进程可无限运行（适合压力测试）
+                        stdout, stderr = os.iorunv("xmake", {"r", "Core"})
+                    end
                     log_text = (stdout or "") .. (stderr or "")
                 end,
                 catch {
@@ -402,35 +407,103 @@ local function _make_batch_runner(label, dir)
             }
             local elapsed = os.time() - t0
 
-            local pass_mark = (log_text:find("ECALL", 1, true) ~= nil)
-            -- 判定超时：timeout 命令以 124/137 退出，或实际运行时长达到上限阈值
-            local is_timeout = (not pass_mark) and (
+            -- 落盘完整日志（"w" 覆盖同名旧文件）
+            local lf, lerr = io.open(log_path, "w")
+            if lf then
+                lf:write(log_text or "")
+                lf:close()
+            else
+                cprint("${yellow underline}[WARNING]${clear} 无法写入日志 %s: %s",
+                    log_path, tostring(lerr))
+            end
+
+            local pass = (log_text:find("ECALL", 1, true) ~= nil)
+            -- 仅在 timeout_sec>0 模式下才考虑超时；
+            -- 通过 timeout 命令的退出码或实际墙钟时长两路判定。
+            local is_timeout = (not pass) and timeout_sec > 0 and (
                 err_text:find("exit: 124", 1, true) ~= nil or
                 err_text:find("exit: 137", 1, true) ~= nil or
                 elapsed >= timeout_sec
             )
+            return { pass = pass, is_timeout = is_timeout, log_path = log_path, elapsed = elapsed }
+        end
 
-            if pass_mark then
+        -- ---------- 分支：单例 vs 批量 ----------
+        if mode == "single" then
+            local case_name = os.getenv("TC")
+            if not case_name or case_name == "" then case_name = "and" end
+
+            if timeout_sec > 0 then
+                cprint("${cyan underline}[INFO]${clear} [sim-single] 运行用例: %s (最长 %ds)",
+                    case_name, timeout_sec)
+            else
+                cprint("${cyan underline}[INFO]${clear} [sim-single] 运行用例: %s (TIMEOUT=0，禁用超时)",
+                    case_name)
+            end
+
+            local r = run_one(case_name)
+            cprint("${green underline}[INFO]${clear} [sim-single] 日志: %s", r.log_path)
+            if r.pass then
+                cprint("${green underline}[INFO]${clear} [sim-single] 通过: %s (耗时 %ds)",
+                    case_name, r.elapsed)
+            elseif r.is_timeout then
+                cprint("${yellow underline}[INFO]${clear} [sim-single] 耗时过长: %s | ${red underline}用例编写不合理!${clear}",
+                    case_name)
+                raise(string.format("sim-single 超时: %s", case_name))
+            else
+                cprint("${red underline}[INFO]${clear} [sim-single] 失败: %s (耗时 %ds，查看日志 %s)",
+                    case_name, r.elapsed, r.log_path)
+                raise(string.format("sim-single 失败: %s", case_name))
+            end
+            return
+        end
+
+        -- mode == "batch"
+        local bin_files = os.files(path.join(dir, "*.bin"))
+        table.sort(bin_files)
+
+        if #bin_files == 0 then
+            raise(string.format("%s 目录下未找到任何 .bin 文件", dir))
+        end
+
+        os.mkdir(sim_log_dir)
+
+        local passed     = {}
+        local failed     = {}
+        local timeouted  = {}
+
+        if timeout_sec > 0 then
+            cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (单例最长不超过 %ds)",
+                label, #bin_files, timeout_sec)
+        else
+            cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (TIMEOUT=0，禁用超时)",
+                label, #bin_files)
+        end
+        cprint("${cyan underline}[INFO]${clear} [%s] 日志输出: %s/<case>.log",
+            label, sim_log_dir)
+
+        for _, bin_file in ipairs(bin_files) do
+            local case_name = path.basename(bin_file)  -- 不含 .bin 后缀的文件名
+            local r = run_one(case_name)
+            if r.pass then
                 table.insert(passed, case_name)
-            elseif is_timeout then
+            elseif r.is_timeout then
                 table.insert(timeouted, case_name)
             else
                 table.insert(failed, case_name)
             end
         end
 
-        -- ============================================================
-        -- 终端输出简洁汇总（不写任何文件）
-        -- ============================================================
+        -- 终端汇总（详细日志已落盘 sim-log/）
         cprint("${green underline}[INFO]${clear} [%s] 通过 (%d): %s",
             label, #passed, #passed > 0 and table.concat(passed, ", ") or "(none)")
-        if #failed > 0 then 
+        if #failed > 0 then
             cprint("${red underline}[INFO]${clear} [%s] 失败 (%d): %s",
-                label, #failed, #failed > 0 and table.concat(failed, ", ") or "(none)")
+                label, #failed, table.concat(failed, ", "))
         end
         if #timeouted > 0 then
-            cprint("${yellow underline}[INFO]${clear} [%s] 耗时过长 (%d): %s | ${red underline}用例编写不合理！${clear}",
-                label, #timeouted, #timeouted > 0 and table.concat(timeouted, ", ") or "(none)")
+            cprint("${yellow underline}[INFO]${clear} [%s] 耗时过长 (%d): %s | ${red underline}用例编写不合理!${clear}",
+                label, #timeouted, table.concat(timeouted, ", "))
         end
         if #failed > 0 or #timeouted > 0 then
             raise(string.format("%s 完成，%d 个失败，%d 个耗时过长",
@@ -439,71 +512,53 @@ local function _make_batch_runner(label, dir)
     end
 end
 
+-- ============================================================================
+-- target: sim-single —— 单用例标准化运行（落盘 log + CSV）
+-- ============================================================================
+-- 与直接 `xmake r Core` 的区别：本 target 会捕获 stdout+stderr 并自动落盘到
+-- build/sim-log/<case>.log，便于事后查阅而无需重复仿真。CSV 一并写入 build/sim-data/。
+-- 支持的 .bin 搜索目录：test_cases_basic / test_cases_regressive / test_cases_pressure。
+-- 用法：
+--   xmake r sim-single                    # 默认用例 (and)
+--   TC=foo xmake r sim-single             # 指定用例
+--   TIMEOUT=0 TC=foo xmake r sim-single   # 禁用超时（适合 pressure 长时用例）
+-- ============================================================================
+target("sim-single", function()
+    set_kind("phony")
+    set_default(false)
+    on_run(_make_runner("single"))
+end)
+
+-- ============================================================================
+-- target: sim-basic / sim-regressive —— 批量运行测试用例
+-- ============================================================================
+-- sim-basic       遍历 test_cases_basic/*.bin
+-- sim-regressive  遍历 test_cases_regressive/*.bin
+-- 注意：test_cases_pressure 不在批量范围内，仅可通过 sim-single 单跑接入。
+-- 判定标准、日志落盘策略与 sim-single 完全一致（共用 run_one helper）。
+-- ============================================================================
 target("sim-basic", function()
     set_kind("phony")
     set_default(false)
-    on_run(_make_batch_runner("sim-basic", tc_basic_dir))
+    on_run(_make_runner("batch", "sim-basic", tc_basic_dir))
 end)
 
 target("sim-regressive", function()
     set_kind("phony")
     set_default(false)
-    on_run(_make_batch_runner("sim-regressive", tc_regressive_dir))
+    on_run(_make_runner("batch", "sim-regressive", tc_regressive_dir))
 end)
 
 -- ============================================================================
--- target: clean —— 清理构建产物和仿真中间文件
+-- target: clean —— 清空整个 build/ 目录
 -- ============================================================================
--- 删除以下内容：
---   - build/vcs/Core/sim_build/     VCS 编译产物
---   - build/vcs/Core/*.fsdb*        FSDB 波形文件及其附属文件
---   - build/vcs/Core/*.log          仿真日志
---   - build/vcs/Core/*.key          Verdi 密钥文件
---   - build/sim-all/                批量仿真输出目录
---   - build/Core/irom.hex           运行时生成的 IROM hex 文件
+-- 直接整目录删除，省去逐项维护，避免不同后端 / 新增文件被遗漏。
 -- ============================================================================
 target("clean", function()
     set_kind("phony")
     set_default(false)
     on_run(function()
-        local vcs_dir = path.join(build_dir, "vcs", "Core")
-
-        -- 清理 VCS 编译产物
-        os.tryrm(path.join(vcs_dir, "sim_build"))
-        cprint("${green underline}[INFO]${clear} 已清理 VCS 编译产物: sim_build/")
-
-        -- 清理 FSDB 波形文件（*.fsdb 及其附属文件 *.fsdb.*）
-        local fsdb_files = os.files(path.join(vcs_dir, "*.fsdb*"))
-        for _, f in ipairs(fsdb_files) do
-            os.tryrm(f)
-        end
-        if #fsdb_files > 0 then
-            cprint("${green underline}[INFO]${clear} 已清理 %d 个 FSDB 波形文件", #fsdb_files)
-        end
-
-        -- 清理仿真日志
-        local log_files = os.files(path.join(vcs_dir, "*.log"))
-        for _, f in ipairs(log_files) do
-            os.tryrm(f)
-        end
-
-        -- 清理 Verdi 密钥文件
-        local key_files = os.files(path.join(vcs_dir, "*.key"))
-        for _, f in ipairs(key_files) do
-            os.tryrm(f)
-        end
-
-        -- 清理每周期仿真数据（占用 + IPC 的 CSV）
-        os.tryrm(path.join(build_dir, "sim-data"))
-        cprint("${green underline}[INFO]${clear} 已清理仿真数据: sim-data/")
-
-        -- 清理运行时生成的 IROM hex 文件
-        os.tryrm(irom_hex)
-        cprint("${green underline}[INFO]${clear} 已清理 IROM hex 文件")
-        -- v18：同步清理 DRAM hex 文件
-        os.tryrm(dram_hex)
-        cprint("${green underline}[INFO]${clear} 已清理 DRAM hex 文件")
-
-        cprint("${green underline}[INFO]${clear} 清理完成")
+        os.tryrm(build_dir)
+        cprint("${green underline}[INFO]${clear} 已清空整个 build/ 目录: %s", build_dir)
     end)
 end)

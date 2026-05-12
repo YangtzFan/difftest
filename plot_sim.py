@@ -60,15 +60,15 @@ def find_csv(case_name: str) -> str:
     """根据脚本自身位置定位 build/sim-data/<case>.csv，找不到则报错退出。"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(script_dir, "build", "sim-data", f"{case_name}.csv")
+    if os.path.isfile(csv_path):
+        return csv_path
 
-    if not os.path.isfile(csv_path):
-        print(
-            f"[ERROR] 未找到仿真数据文件: {csv_path}\n"
-            f"        请先运行 'TC={case_name} xmake r Core' 生成 CSV。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    return csv_path
+    print(
+        f"[ERROR] 未找到仿真数据文件: {csv_path}\n"
+        f"        请先运行 'TC={case_name} xmake r Core' 生成 CSV。",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def load_csv(csv_path: str):
