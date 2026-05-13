@@ -287,10 +287,27 @@ target("Core", function()
         -- 准备仿真数据 CSV 输出路径：build/sim-data/<case>.csv（同名覆盖）
         -- 以绝对路径通过环境变量 SIM_DATA_FILE 传给 main.lua，避免 main.lua
         -- 运行时的工作目录与项目根不一致导致路径错乱。
+        --
+        -- 并行 runner 会在外层先 setenv("SIM_DATA_FILE", ...) 指向 per-target
+        -- 子目录（build/sim-data/<label>/<case>.csv），此处优先尊重外部已设置值，
+        -- 防止被覆盖到顶层 build/sim-data/ 造成路径冲突。
         -- ========================================================
         os.mkdir(sim_data_dir)
-        local sim_data_file = path.absolute(path.join(sim_data_dir, tc_name .. ".csv"))
+        -- 路径决策：
+        --   - 外部 (parallel runner) 已设 SIM_DATA_FILE 指向 per-target 子目录时，
+        --     检查 basename 是否以 "<tc_name>.csv" 结尾 → 是则尊重外部值；
+        --   - 否则（串行 / 直接 xmake r Core）使用默认 build/sim-data/<tc>.csv，
+        --     避免上一轮循环遗留的 SIM_DATA_FILE 误用到当前用例。
+        local sim_data_file = os.getenv("SIM_DATA_FILE")
+        local default_data_file = path.absolute(path.join(sim_data_dir, tc_name .. ".csv"))
+        -- 注意：xmake 的 path.basename 会移除扩展名，需要用 path.filename
+        if not sim_data_file or sim_data_file == ""
+           or path.filename(sim_data_file) ~= (tc_name .. ".csv") then
+            sim_data_file = default_data_file
+        end
         os.setenv("SIM_DATA_FILE", sim_data_file)
+        -- 确保 CSV 所在目录存在（外部传入的可能指向子目录）
+        os.mkdir(path.directory(sim_data_file))
         cprint("${green underline}[INFO]${clear} 每周期数据将写入: %s", sim_data_file)
 
         -- 读取二进制文件
@@ -353,30 +370,23 @@ target("Core", function()
 end)
 
 -- ============================================================================
--- 运行测试用例的工厂函数 _make_runner(mode, label, dir)
+-- 单用例运行器 _make_single_runner()
 -- ============================================================================
--- 返回的闭包将被赋给 on_run，由 xmake 在运行时绑定到 script-scope 沙箱，
--- 因此可以在闭包内自由使用 os.mkdir / os.iorunv / os.time / try-catch 等 API。
--- 内部 inline 定义 run_one：执行单个用例 + 落盘日志 + 判定通过/超时/失败，
--- 被 sim-single 和 sim-basic/sim-regressive 三个 target 共用，避免重复代码。
---
--- 通过 os.iorunv 启动子 xmake 跑 Core target，捕获 stdout+stderr 写入日志：
+-- 返回的闭包将被赋给 sim-single 的 on_run。通过 os.iorunv 启动子 xmake 跑
+-- Core target，捕获 stdout+stderr 写入日志：
 --   - timeout_sec > 0：用系统 `timeout` 命令包裹，超时退出码 124/137；
---   - timeout_sec == 0：不包裹 `timeout`，子进程可无限运行；
+--   - timeout_sec == 0：不包裹 `timeout`，子进程可无限运行。
 -- 判定通过：日志包含 "ECALL"（参考模型正常退出标志）。
 -- 落盘路径：build/sim-log/<case>.log（"w" 模式覆盖）。
 --
--- mode = "single"  --> 运行 TC 环境变量指定的单个用例（默认 "and"）
--- mode = "batch"   --> 遍历 dir/*.bin 批量运行
+-- 批量回归（sim-basic / sim-regressive）走 _make_parallel_runner，不复用本函数。
 -- ============================================================================
-local function _make_runner(mode, label, dir)
+local function _make_single_runner()
     return function()
-        -- ---------- 内部 helper：跑单个用例 ----------
         local function run_one(case_name)
             os.mkdir(sim_log_dir)
             local log_path = path.join(sim_log_dir, case_name .. ".log")
 
-            -- 给子 xmake 注入环境变量：TC 指定用例名，SIM 指定后端
             os.setenv("TC", case_name)
             os.setenv("SIM", sim)
 
@@ -387,13 +397,9 @@ local function _make_runner(mode, label, dir)
                 function()
                     local stdout, stderr
                     if timeout_sec > 0 then
-                        -- 用 `timeout` 命令包裹子 xmake，超时 SIGTERM；
-                        -- --kill-after=5 表示 5 秒宽限期后仍未退出则 SIGKILL。
-                        -- timeout 自身约定：被 SIGTERM 杀返回 124，被 SIGKILL 杀返回 137。
                         stdout, stderr = os.iorunv("timeout",
                             {"--kill-after=5", tostring(timeout_sec), "xmake", "r", "Core"})
                     else
-                        -- TIMEOUT=0：禁用外部超时，子进程可无限运行（适合压力测试）
                         stdout, stderr = os.iorunv("xmake", {"r", "Core"})
                     end
                     log_text = (stdout or "") .. (stderr or "")
@@ -407,7 +413,6 @@ local function _make_runner(mode, label, dir)
             }
             local elapsed = os.time() - t0
 
-            -- 落盘完整日志（"w" 覆盖同名旧文件）
             local lf, lerr = io.open(log_path, "w")
             if lf then
                 lf:write(log_text or "")
@@ -418,8 +423,6 @@ local function _make_runner(mode, label, dir)
             end
 
             local pass = (log_text:find("ECALL", 1, true) ~= nil)
-            -- 仅在 timeout_sec>0 模式下才考虑超时；
-            -- 通过 timeout 命令的退出码或实际墙钟时长两路判定。
             local is_timeout = (not pass) and timeout_sec > 0 and (
                 err_text:find("exit: 124", 1, true) ~= nil or
                 err_text:find("exit: 137", 1, true) ~= nil or
@@ -428,73 +431,226 @@ local function _make_runner(mode, label, dir)
             return { pass = pass, is_timeout = is_timeout, log_path = log_path, elapsed = elapsed }
         end
 
-        -- ---------- 分支：单例 vs 批量 ----------
-        if mode == "single" then
-            local case_name = os.getenv("TC")
-            if not case_name or case_name == "" then case_name = "and" end
+        local case_name = os.getenv("TC")
+        if not case_name or case_name == "" then case_name = "and" end
 
-            if timeout_sec > 0 then
-                cprint("${cyan underline}[INFO]${clear} [sim-single] 运行用例: %s (最长 %ds)",
-                    case_name, timeout_sec)
-            else
-                cprint("${cyan underline}[INFO]${clear} [sim-single] 运行用例: %s (TIMEOUT=0，禁用超时)",
-                    case_name)
-            end
-
-            local r = run_one(case_name)
-            cprint("${green underline}[INFO]${clear} [sim-single] 日志: %s", r.log_path)
-            if r.pass then
-                cprint("${green underline}[INFO]${clear} [sim-single] 通过: %s (耗时 %ds)",
-                    case_name, r.elapsed)
-            elseif r.is_timeout then
-                cprint("${yellow underline}[INFO]${clear} [sim-single] 耗时过长: %s | ${red underline}用例编写不合理!${clear}",
-                    case_name)
-                raise(string.format("sim-single 超时: %s", case_name))
-            else
-                cprint("${red underline}[INFO]${clear} [sim-single] 失败: %s (耗时 %ds，查看日志 %s)",
-                    case_name, r.elapsed, r.log_path)
-                raise(string.format("sim-single 失败: %s", case_name))
-            end
-            return
+        if timeout_sec > 0 then
+            cprint("${cyan underline}[INFO]${clear} [sim-single] 运行用例: %s (最长 %ds)",
+                case_name, timeout_sec)
+        else
+            cprint("${cyan underline}[INFO]${clear} [sim-single] 运行用例: %s (TIMEOUT=0，禁用超时)",
+                case_name)
         end
 
-        -- mode == "batch"
+        local r = run_one(case_name)
+        cprint("${green underline}[INFO]${clear} [sim-single] 日志: %s", r.log_path)
+        if r.pass then
+            cprint("${green underline}[INFO]${clear} [sim-single] 通过: %s (耗时 %ds)",
+                case_name, r.elapsed)
+        elseif r.is_timeout then
+            cprint("${yellow underline}[INFO]${clear} [sim-single] 耗时过长: %s | ${red underline}用例编写不合理!${clear}",
+                case_name)
+            raise(string.format("sim-single 超时: %s", case_name))
+        else
+            cprint("${red underline}[INFO]${clear} [sim-single] 失败: %s (耗时 %ds，查看日志 %s)",
+                case_name, r.elapsed, r.log_path)
+            raise(string.format("sim-single 失败: %s", case_name))
+        end
+    end
+end
+
+-- ============================================================================
+-- 并行批量运行器 _make_parallel_runner(label, dir, label_short)
+-- ============================================================================
+-- 用 GNU parallel 调度多个用例并发跑仿真，单用例 wrapper 用 flock 串行化
+-- "hex 写入 + simv 启动 + $readmemh 加载完成" 这段临界区，仿真主循环并行。
+--
+-- 为什么需要临界区：
+--   build/Core/{irom,dram}.hex 是 RTL 中 $readmemh 的硬编码路径（绝对路径），
+--   多 simv 进程并发会争抢这两个文件。但 $readmemh 只在 simv initial 块执行
+--   一次，之后 hex 文件被覆盖也不影响已加载的 RTL 内存。因此只需保证
+--   "写入 hex → simv 启动到 readmemh 结束" 这段对所有用例串行即可。
+--
+-- 输出目录隔离（防止 CSV/log 名字冲突）：
+--   build/sim-log/<label_short>/<case>.log    （label_short ∈ {basic, regressive}）
+--   build/sim-data/<label_short>/<case>.csv
+--   build/sim-status/<label_short>/<case>.status   （pass/fail/timeout 标记）
+--
+-- 并发度：JOBS 环境变量控制（默认 8）。锁文件按 label 区分。
+-- 终端输出格式与串行 runner 完全一致（通过/失败/超时三类）。
+-- ============================================================================
+local function _make_parallel_runner(label, dir, label_short)
+    return function()
         local bin_files = os.files(path.join(dir, "*.bin"))
         table.sort(bin_files)
-
         if #bin_files == 0 then
             raise(string.format("%s 目录下未找到任何 .bin 文件", dir))
         end
 
-        os.mkdir(sim_log_dir)
+        -- 输出子目录：log / csv / status
+        local log_subdir    = path.join(sim_log_dir,  label_short)
+        local data_subdir   = path.join(sim_data_dir, label_short)
+        local status_subdir = path.join(build_dir, "sim-status", label_short)
+        os.mkdir(log_subdir)
+        os.mkdir(data_subdir)
+        -- status 目录每次重建，避免上次遗留状态被误读
+        os.tryrm(status_subdir)
+        os.mkdir(status_subdir)
 
+        local jobs = tonumber(os.getenv("JOBS")) or 8
+        if jobs < 1 then jobs = 1 end
+
+        -- 生成 wrapper.sh —— 单用例执行脚本（在子进程中跑）
+        -- 参数顺序: $1=case_name $2=sim $3=timeout_sec $4=label_short
+        --                $5=log_subdir $6=data_subdir $7=status_subdir
+        --                $8=prj_dir    $9=lock_file
+        local wrapper_path = path.join(build_dir, "sim-worker-" .. label_short .. ".sh")
+        local wrapper_text = [[#!/bin/bash
+# 单用例并行执行 wrapper（由 GNU parallel 调度）
+set -u
+
+case_name="$1"
+sim="$2"
+timeout_sec="$3"
+label_short="$4"
+log_dir="$5"
+data_dir="$6"
+status_dir="$7"
+prj_dir="$8"
+lock_file="$9"
+
+log_path="$log_dir/${case_name}.log"
+csv_path="$data_dir/${case_name}.csv"
+status_path="$status_dir/${case_name}.status"
+
+cd "$prj_dir"
+
+# 为 Core target 注入环境变量
+export TC="$case_name"
+export SIM="$sim"
+export SIM_DATA_FILE="$csv_path"
+# 禁用 Core 内部 watchdog（line 253 起），由本 wrapper 用 timeout 命令统一管控
+export TIMEOUT="0"
+
+# ---------- 临界区开始 ----------
+# 用 fd 200 显式持有 flock，避免 subshell 隔离导致 SIMV_PID 无法 wait。
+# 临界区作用：保护 build/Core/{irom,dram}.hex（RTL $readmemh 硬编码绝对路径）
+# 在 xmake before_run 写 hex 与 simv initial 块加载完成之间不被其他用例覆盖。
+exec 200>"$lock_file"
+flock -x 200
+
+# 在临界区内启动 simv（直接作为本 shell 子进程，wait 有效）
+if [ "$timeout_sec" -gt 0 ]; then
+    timeout --kill-after=5 "$timeout_sec" xmake r Core > "$log_path" 2>&1 &
+else
+    xmake r Core > "$log_path" 2>&1 &
+fi
+SIMV_PID=$!
+
+t0=$(date +%s)
+
+# 等待 simv 完成 $readmemh：监控日志，出现以下任一关键字即视为已度过 initial 阶段
+# - "RESET DONE / VERILUA / verilua / Cycle / ECALL / TEST PASS|FAIL / 每周期数据将写入"
+# 最长等 30 秒兜底
+for _ in $(seq 1 300); do
+    if ! kill -0 "$SIMV_PID" 2>/dev/null; then
+        # 极快用例可能在临界区内就跑完
+        break
+    fi
+    if [ -s "$log_path" ] && grep -qE "RESET DONE|VERILUA|verilua|Cycle|ECALL|TEST FAIL|TEST PASS|每周期数据将写入" "$log_path" 2>/dev/null; then
+        sleep 0.1
+        break
+    fi
+    sleep 0.1
+done
+
+# 释放锁，让下一个用例进入临界区；simv 继续后台运行
+flock -u 200
+exec 200>&-
+# ---------- 临界区结束 ----------
+
+# 等待 simv 真正结束（SIMV_PID 是本 shell 的直接子进程，wait 有效）
+wait "$SIMV_PID"
+rc=$?
+elapsed=$(( $(date +%s) - t0 ))
+
+# 判定 pass / timeout / fail
+if grep -q "ECALL" "$log_path" 2>/dev/null; then
+    echo "pass" > "$status_path"
+elif [ "$timeout_sec" -gt 0 ] && { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ] || [ "$elapsed" -ge "$timeout_sec" ]; }; then
+    echo "timeout" > "$status_path"
+else
+    echo "fail" > "$status_path"
+fi
+exit 0
+]]
+        local wf = assert(io.open(wrapper_path, "w"))
+        wf:write(wrapper_text)
+        wf:close()
+        os.exec(string.format("chmod +x %s", wrapper_path))
+
+        if timeout_sec > 0 then
+            cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (单例最长不超过 %ds, 并发 %d)",
+                label, #bin_files, timeout_sec, jobs)
+        else
+            cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (TIMEOUT=0，禁用超时, 并发 %d)",
+                label, #bin_files, jobs)
+        end
+        cprint("${cyan underline}[INFO]${clear} [%s] 日志输出: %s/<case>.log",
+            label, log_subdir)
+
+        -- 构造 GNU parallel 命令行：
+        --   parallel --jobs N --no-notice wrapper.sh {} sim timeout label_short logdir datadir statusdir prjdir lockfile ::: case1 case2 ...
+        local lock_file = string.format("/tmp/difftest_sim_%s_%d.lock", label_short, os.getpid())
+        local parallel_args = {
+            "--jobs", tostring(jobs),
+            "--no-notice",
+            "--will-cite",
+            wrapper_path,
+            "{}",
+            sim,
+            tostring(timeout_sec),
+            label_short,
+            log_subdir,
+            data_subdir,
+            status_subdir,
+            prj_dir,
+            lock_file,
+            ":::"
+        }
+        for _, bin_file in ipairs(bin_files) do
+            parallel_args[#parallel_args + 1] = path.basename(bin_file)
+        end
+        -- 用 try 包裹：即使部分 case 失败，parallel 也会非 0 退出，我们仍需汇总结果
+        try {
+            function() os.execv("parallel", parallel_args) end,
+            catch { function() end }
+        }
+        -- 清理锁文件
+        os.tryrm(lock_file)
+
+        -- 汇总结果（与串行 runner 完全一致的输出格式）
         local passed     = {}
         local failed     = {}
         local timeouted  = {}
-
-        if timeout_sec > 0 then
-            cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (单例最长不超过 %ds)",
-                label, #bin_files, timeout_sec)
-        else
-            cprint("${cyan underline}[INFO]${clear} [%s] 开始运行 %d 个用例 (TIMEOUT=0，禁用超时)",
-                label, #bin_files)
-        end
-        cprint("${cyan underline}[INFO]${clear} [%s] 日志输出: %s/<case>.log",
-            label, sim_log_dir)
-
         for _, bin_file in ipairs(bin_files) do
-            local case_name = path.basename(bin_file)  -- 不含 .bin 后缀的文件名
-            local r = run_one(case_name)
-            if r.pass then
+            local case_name = path.basename(bin_file)
+            local status_path = path.join(status_subdir, case_name .. ".status")
+            local s = ""
+            local sh = io.open(status_path, "r")
+            if sh then
+                s = (sh:read("*a") or ""):gsub("%s+$", "")
+                sh:close()
+            end
+            if s == "pass" then
                 table.insert(passed, case_name)
-            elseif r.is_timeout then
+            elseif s == "timeout" then
                 table.insert(timeouted, case_name)
             else
                 table.insert(failed, case_name)
             end
         end
 
-        -- 终端汇总（详细日志已落盘 sim-log/）
         cprint("${green underline}[INFO]${clear} [%s] 通过 (%d): %s",
             label, #passed, #passed > 0 and table.concat(passed, ", ") or "(none)")
         if #failed > 0 then
@@ -526,7 +682,7 @@ end
 target("sim-single", function()
     set_kind("phony")
     set_default(false)
-    on_run(_make_runner("single"))
+    on_run(_make_single_runner())
 end)
 
 -- ============================================================================
@@ -540,13 +696,15 @@ end)
 target("sim-basic", function()
     set_kind("phony")
     set_default(false)
-    on_run(_make_runner("batch", "sim-basic", tc_basic_dir))
+    -- 用 GNU parallel + flock 并行运行；输出独立到 build/sim-{log,data}/basic/
+    on_run(_make_parallel_runner("sim-basic", tc_basic_dir, "basic"))
 end)
 
 target("sim-regressive", function()
     set_kind("phony")
     set_default(false)
-    on_run(_make_runner("batch", "sim-regressive", tc_regressive_dir))
+    -- 用 GNU parallel + flock 并行运行；输出独立到 build/sim-{log,data}/regressive/
+    on_run(_make_parallel_runner("sim-regressive", tc_regressive_dir, "regressive"))
 end)
 
 -- ============================================================================

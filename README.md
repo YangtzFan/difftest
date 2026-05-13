@@ -44,20 +44,37 @@ SIM=verilator TC=test_pressure TIMEOUT=0 xmake r sim-single  # 禁用超时（pr
 
 支持的 `.bin` 搜索目录：`test_cases_basic / test_cases_regressive / test_cases_pressure`，三目录同名则按列表顺序优先取。
 
-## 批量测试
+## 批量测试（GNU parallel 并行）
 
-`sim-basic` 和 `sim-regressive` 逐个执行 `test_cases_basic/` 和 `test_cases_regressive/` 下所有 `.bin` 文件的 difftest 仿真：
+`sim-basic` 和 `sim-regressive` 使用 **GNU parallel** 并行运行 `test_cases_basic/` / `test_cases_regressive/` 下所有 `.bin`：
 
-- 判定标准：仿真输出中包含 `ECALL`（参考模型正常触发 ECALL 结束）。
-- 终端会打印通过 / 失败 / 超时用例列表；若有失败则非零退出。
-- **每个用例完整 stdout+stderr 落盘到 `build/sim-log/<case>.log`**（同名旧文件直接覆盖），跑完后可直接 `cat` 查阅，避免对单例重复仿真。
-- **每周期 IPC / 占用 CSV 落盘到 `build/sim-data/<case>.csv`**；单跑 `xmake r sim-single` 或 `xmake r Core` 也写入同一目录。
-- 可通过设置环境变量 `TIMEOUT=120` 修改超时阈值为 120 s，默认 600 s；`TIMEOUT=0` 表示禁用超时检测（适合 pressure 长时用例）。
-- 上述 log / data 行为对 `sim-single` 同样适用（单跑也落盘）。
+```bash
+SIM=verilator JOBS=100 xmake r sim-basic         # 100 并发，约 20s 跑完 39 个用例
+SIM=verilator JOBS=100 xmake r sim-regressive    # 100 并发，约 1min 跑完 64 个用例
+SIM=verilator xmake r sim-basic                  # JOBS 未设置时默认 8 并发
+```
+
+- **并发度**：`JOBS` 环境变量控制，默认 8。在 256 核服务器上推荐 `JOBS=100`。
+- **临界区保护**：`build/Core/{irom,dram}.hex` 是 RTL `$readmemh` 的硬编码绝对路径，多 simv 并发会争抢；
+  wrapper 用 `flock` 串行化"hex 写入 + simv `$readmemh` 加载完成"这段（只占整个仿真的几百毫秒），主仿真循环并行。
+- **判定标准**：仿真输出中包含 `ECALL`（参考模型正常触发 ECALL 结束）。
+- **输出隔离**：按 target 落到独立子目录，避免 basic / regressive 同名用例冲突：
+  - `build/sim-log/<basic|regressive>/<case>.log` — 完整 stdout+stderr（同名覆盖）
+  - `build/sim-data/<basic|regressive>/<case>.csv` — 每周期 IPC / 占用 CSV
+  - `build/sim-status/<basic|regressive>/<case>.status` — `pass` / `fail` / `timeout` 标记
+- 终端打印 `通过 / 失败 / 耗时过长` 三类用例列表；任一非通过则非零退出。
+- 通过 `TIMEOUT=120` 修改单用例超时阈值（默认 600s）；`TIMEOUT=0` 禁用超时（适合 pressure 长时用例）。
+
+> sim-single 仍单线程，CSV 写入 `build/sim-data/<case>.csv`（顶层，无子目录），其行为不变。
 
 ## 仿真数据与可视化
 
-每次运行 `xmake run Core`（无论批量还是单用例）都会写入 `build/sim-data/<case>.csv`，列含义如下：
+每次运行（单跑 `xmake run Core` / `sim-single`，或批量 `sim-basic` / `sim-regressive`）都会写入 CSV：
+
+- 单跑：`build/sim-data/<case>.csv`
+- 批量：`build/sim-data/<basic|regressive>/<case>.csv`
+
+列含义如下：
 
 | 列名 | 含义 |
 | --- | --- |
@@ -84,7 +101,7 @@ python3 plot_sim.py and -o and.png
 
 - 若请求区间内某段没有数据，不会强行补点，但横轴仍保留该区间范围。
 - 需要 `matplotlib`，可通过 `pip install matplotlib` 安装。
-- `xmake run clean` 会直接清空整个 `build/` 目录（包含 RTL、VCS/Verilator 编译产物、sim-data/、sim-log/、波形等）。
+- `xmake run clean` 会直接清空整个 `build/` 目录（包含 RTL、VCS/Verilator 编译产物、sim-data/、sim-log/、sim-status/、波形等）。
 
 ## 项目结构
 
