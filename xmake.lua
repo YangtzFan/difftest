@@ -550,14 +550,20 @@ SIMV_PID=$!
 t0=$(date +%s)
 
 # 等待 simv 完成 $readmemh：监控日志，出现以下任一关键字即视为已度过 initial 阶段
-# - "RESET DONE / VERILUA / verilua / Cycle / ECALL / TEST PASS|FAIL / 每周期数据将写入"
+# - "[EMU] 模拟器初始化完成" 是 lua harness 在 simv 加载完 $readmemh 后才输出，
+#   是唯一可靠的"$readmemh 已完成"信号（对 VCS / Verilator 都成立）。
+# - VCS 在检测到 ASLR 时会 re-exec simv，re-exec 后的 simv 重新跑 $readmemh，
+#   因此早期由 xmake before_run 打印的 "每周期数据将写入" / "full runcmd" 等关键字
+#   不能作为放锁条件，否则会出现"放锁过早→其它用例覆盖 irom.hex→re-execed simv
+#   加载到错误 hex"的并发 race（实测 VCS sim-basic 38/39 失败）。
+# - 兜底关键字保留 "ECALL / TEST PASS / TEST FAIL" 以兼容极快用例在临界区内跑完的情况。
 # 最长等 30 秒兜底
 for _ in $(seq 1 300); do
     if ! kill -0 "$SIMV_PID" 2>/dev/null; then
         # 极快用例可能在临界区内就跑完
         break
     fi
-    if [ -s "$log_path" ] && grep -qE "RESET DONE|VERILUA|verilua|Cycle|ECALL|TEST FAIL|TEST PASS|每周期数据将写入" "$log_path" 2>/dev/null; then
+    if [ -s "$log_path" ] && grep -qE "\[EMU\] 模拟器初始化完成|ECALL|TEST FAIL|TEST PASS" "$log_path" 2>/dev/null; then
         sleep 0.1
         break
     fi
